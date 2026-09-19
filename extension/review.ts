@@ -3,6 +3,16 @@ import type { EntryType } from "@typesafe-ai/sdk";
 import { buildReviewQuestions } from "./questions.ts";
 import type { RawJudgments } from "./types.ts";
 
+export class ReviewError extends Error {
+ readonly kind: "request" | "response";
+
+ constructor(kind: "request" | "response", message: string, options?: ErrorOptions) {
+  super(message, options);
+  this.name = "ReviewError";
+  this.kind = kind;
+ }
+}
+
 /**
  * The thin SDK boundary — the ONLY module that touches @typesafe-ai/sdk at
  * runtime. It builds the review questions, sends ONE request over the shared
@@ -39,8 +49,8 @@ function normalizeScoreAnswer(
  answer: Extract<RawAnswer, { type: "score" }>,
  name: string,
 ): RawJudgments["scores"][string] {
- if (!Number.isFinite(answer.score)) {
-  throw new Error(`invalid score answer for "${name}": score is not finite`);
+ if (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > 4) {
+  throw new Error(`invalid score answer for "${name}": expected a value from 0 to 4`);
  }
  const probabilities = Object.fromEntries(
   Object.entries(answer.probabilities ?? {}).map(([level, probability]) => [
@@ -64,7 +74,15 @@ export async function runReview(
  state: EntryType,
 ): Promise<RawJudgments> {
  const built = buildReviewQuestions();
- const res = await client.systemOne({ state, questions: built.questions });
+ let res: Awaited<ReturnType<TypeSafeClient["systemOne"]>>;
+ try {
+  res = await client.systemOne({ state, questions: built.questions });
+ } catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  throw new ReviewError("request", `TypeSafe review request failed: ${message}`, {
+   cause: error,
+  });
+ }
 
  // SAFETY: `client.systemOne` is typed so that `answers[name]` for a score
  // question name is a ScoreResponse (`.score/.confidence/.probabilities`) and
@@ -73,21 +91,29 @@ export async function runReview(
  // mask a real type error — it only narrows the union to the shapes we use.
  const answers = res.answers as unknown as Record<string, RawAnswer>;
 
- const scores: RawJudgments["scores"] = {};
- for (const name of built.dimensionNames) {
-  const a = answers[name];
-  if (!a || a.type !== "score")
-   throw new Error(`missing/invalid score answer for "${name}"`);
-  scores[name] = normalizeScoreAnswer(a, name);
- }
+ try {
+  const scores: RawJudgments["scores"] = {};
+  for (const name of built.dimensionNames) {
+   const a = answers[name];
+   if (!a || a.type !== "score")
+    throw new Error(`missing/invalid score answer for "${name}"`);
+   scores[name] = normalizeScoreAnswer(a, name);
+  }
 
- const nouls: Record<string, number> = {};
- for (const name of built.bugNames) {
-  const a = answers[name];
-  if (!a || a.type !== "noul")
-   throw new Error(`missing/invalid noul answer for "${name}"`);
-  nouls[name] = assertProbability(a.noul, `noul answer for ${name}`);
- }
+  const nouls: Record<string, number> = {};
+  for (const name of built.bugNames) {
+   const a = answers[name];
+   if (!a || a.type !== "noul")
+    throw new Error(`missing/invalid noul answer for "${name}"`);
+   nouls[name] = assertProbability(a.noul, `noul answer for ${name}`);
+  }
 
- return { scores, nouls, model: res.model, usage: res.usage };
+  return { scores, nouls, model: res.model, usage: res.usage };
+ } catch (error) {
+  if (error instanceof ReviewError) throw error;
+  const message = error instanceof Error ? error.message : String(error);
+  throw new ReviewError("response", `TypeSafe review response was invalid: ${message}`, {
+   cause: error,
+  });
+ }
 }

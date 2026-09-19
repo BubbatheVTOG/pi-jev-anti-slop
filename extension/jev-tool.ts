@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { extname, relative, resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
@@ -74,7 +74,7 @@ const PARAMS = Type.Object({
   extensions: Type.Optional(
     Type.Array(Type.String(), {
       description:
-        "Extensions to include during a directory scan, such as [\".ts\", \".tsx\"]. Defaults to common source-code extensions.",
+        'Extensions to include during a directory scan, such as [".ts", ".tsx"]. Defaults to common source-code extensions.',
       minItems: 1,
       maxItems: 50,
     }),
@@ -93,37 +93,57 @@ const PARAMS = Type.Object({
     }),
   ),
   language: Type.Optional(
-    Type.String({ description: "Programming language of the code; optional for file and directory reviews." }),
+    Type.String({
+      description:
+        "Programming language of the code; optional for file and directory reviews.",
+    }),
   ),
   note: Type.Optional(
-    Type.String({ description: "Context about the change or review constraints; optional." }),
+    Type.String({
+      description: "Context about the change or review constraints; optional.",
+    }),
   ),
 });
 
 type ReviewTarget = { file: string; code: string; error?: string };
-type FileResult = {
-  file: string;
-  ok: true;
-  report: ReviewReport;
-} | {
-  file: string;
-  ok: false;
-  error: string;
-};
+type FileResult =
+  | {
+      file: string;
+      ok: true;
+      report: ReviewReport;
+    }
+  | {
+      file: string;
+      ok: false;
+      error: string;
+    };
 
 function normalizeExtensions(extensions: string[] | undefined): Set<string> {
-  return new Set((extensions ?? DEFAULT_EXTENSIONS).map((value) => {
-    const trimmed = value.trim().toLowerCase();
-    return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
-  }));
+  return new Set(
+    (extensions ?? DEFAULT_EXTENSIONS).map((value) => {
+      const trimmed = value.trim().toLowerCase();
+      return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
+    }),
+  );
 }
 
-function collectFiles(root: string, extensions: Set<string>, maxFiles: number): string[] {
+function collectFiles(
+  root: string,
+  extensions: Set<string>,
+  maxFiles: number,
+): { files: string[]; truncated: boolean } {
   const files: string[] = [];
+  let truncated = false;
   const visit = (directory: string): void => {
-    if (files.length >= maxFiles) return;
+    if (files.length >= maxFiles) {
+      truncated = true;
+      return;
+    }
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (files.length >= maxFiles) return;
+      if (files.length >= maxFiles) {
+        truncated = true;
+        return;
+      }
       if (entry.isDirectory()) {
         if (!IGNORED_DIRECTORIES.has(entry.name)) visit(resolve(directory, entry.name));
         continue;
@@ -134,7 +154,7 @@ function collectFiles(root: string, extensions: Set<string>, maxFiles: number): 
     }
   };
   visit(root);
-  return files.sort();
+  return { files: files.sort(), truncated };
 }
 
 function resolvePath(cwd: string, path: string): string {
@@ -144,11 +164,18 @@ function resolvePath(cwd: string, path: string): string {
 function readTarget(file: string): ReviewTarget {
   try {
     if (!existsSync(file)) return { file, code: "", error: "file not found" };
-    if (!statSync(file).isFile()) return { file, code: "", error: "not a regular file" };
+    if (!statSync(file).isFile())
+      return { file, code: "", error: "not a regular file" };
     const code = readFileSync(file, "utf8");
-    return code.trim() === "" ? { file, code: "", error: "file is empty" } : { file, code };
+    return code.trim() === ""
+      ? { file, code: "", error: "file is empty" }
+      : { file, code };
   } catch (error) {
-    return { file, code: "", error: error instanceof Error ? error.message : String(error) };
+    return {
+      file,
+      code: "",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -162,10 +189,14 @@ function resolveTargets(
     maxFiles?: number;
     code?: string;
   },
-): { targets: ReviewTarget[]; selectionError?: string } {
+ ): { targets: ReviewTarget[]; selectionError?: string; scanTruncated?: boolean } {
   if (typeof params.code === "string" && params.code.trim() !== "") {
     if (params.path || params.paths?.length || params.directory) {
-      return { targets: [], selectionError: "`code` cannot be combined with path, paths, or directory." };
+      return {
+        targets: [],
+        selectionError:
+          "`code` cannot be combined with path, paths, or directory.",
+      };
     }
     return { targets: [{ file: "<inline>", code: params.code }] };
   }
@@ -175,7 +206,10 @@ function resolveTargets(
   else if (params.path) requested = [params.path];
 
   if (requested.length > 0 && params.directory) {
-    return { targets: [], selectionError: "Use either path/paths or directory, not both." };
+    return {
+      targets: [],
+      selectionError: "Use either path/paths or directory, not both.",
+    };
   }
 
   if (requested.length > 0) {
@@ -190,22 +224,29 @@ function resolveTargets(
   if (params.directory) {
     const directory = resolvePath(cwd, params.directory);
     if (!existsSync(directory) || !statSync(directory).isDirectory()) {
-      return { targets: [], selectionError: `directory not found: ${directory}` };
+      return {
+        targets: [],
+        selectionError: `directory not found: ${directory}`,
+      };
     }
     const extensions = normalizeExtensions(params.extensions);
+    const scan = collectFiles(directory, extensions, params.maxFiles ?? DEFAULT_MAX_FILES);
     return {
-      targets: collectFiles(directory, extensions, params.maxFiles ?? DEFAULT_MAX_FILES)
-        .map(readTarget),
+      targets: scan.files.map(readTarget),
+      scanTruncated: scan.truncated,
     };
   }
 
-  return { targets: [], selectionError: "Provide path, paths, directory, or inline code." };
+  return {
+    targets: [],
+    selectionError: "Provide path, paths, directory, or inline code.",
+  };
 }
 
-function displayPath(cwd: string, file: string): string {
-  if (file === "<inline>") return file;
-  const relativePath = relative(cwd, file);
-  return relativePath && !relativePath.startsWith("..") ? relativePath : file;
+function displayPath(_cwd: string, file: string): string {
+  // Absolute normalized paths prevent ambiguity when a batch spans directories
+  // or when the agent receives results after changing its working directory.
+  return file;
 }
 
 function summarizeResult(result: FileResult): string {
@@ -215,7 +256,10 @@ function summarizeResult(result: FileResult): string {
     `\n## ${result.file}`,
     `verdict: ${report.composite.tier.toUpperCase()}   composite=${report.composite.score.toFixed(2)}   escalate=${report.escalate}`,
     `flags: ${report.flags.length}`,
-    ...report.flags.map((flag, index) => `  ${index + 1}. [${flag.severity}] ${flag.title} — ${flag.detail}`),
+    ...report.flags.map(
+      (flag, index) =>
+        `  ${index + 1}. [${flag.severity}] ${flag.title} — ${flag.detail}`,
+    ),
   ].join("\n");
 }
 
@@ -258,11 +302,14 @@ export function registerJevReviewTool(
         selection = resolveTargets(ctx.cwd, params);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return result(`jev_review: could not resolve review targets: ${message}`, {
-          ok: false,
-          reason: "target-resolution",
-          error: message,
-        });
+        return result(
+          `jev_review: could not resolve review targets: ${message}`,
+          {
+            ok: false,
+            reason: "target-resolution",
+            error: message,
+          },
+        );
       }
       if (selection.selectionError) {
         return result(`jev_review: ${selection.selectionError}`, {
@@ -281,7 +328,11 @@ export function registerJevReviewTool(
       for (const target of selection.targets) {
         const file = displayPath(ctx.cwd, target.file);
         if (target.error || !target.code) {
-          results.push({ file, ok: false, error: target.error ?? "file is empty" });
+          results.push({
+            file,
+            ok: false,
+            error: target.error ?? "file is empty",
+          });
           continue;
         }
         let code = target.code;
@@ -297,7 +348,11 @@ export function registerJevReviewTool(
             note: `per-file review: judge only ${file}; ${note}`,
             code,
           });
-          results.push({ file, ok: true, report: composeReport(raw, cfg, file) });
+          results.push({
+            file,
+            ok: true,
+            report: composeReport(raw, cfg, file),
+          });
         } catch (error) {
           results.push({
             file,
@@ -307,16 +362,22 @@ export function registerJevReviewTool(
         }
       }
 
-      const successful = results.filter((item): item is Extract<FileResult, { ok: true }> => item.ok);
+      const successful = results.filter(
+        (item): item is Extract<FileResult, { ok: true }> => item.ok,
+      );
       const failed = results.length - successful.length;
       const summary = [
         `Jev per-file review complete: ${successful.length}/${results.length} reviewed${failed ? `, ${failed} failed` : ""}.`,
+        ...(selection.scanTruncated
+          ? [`WARNING: directory scan reached the ${params.maxFiles ?? DEFAULT_MAX_FILES}-file cap; review the remaining files separately.`]
+          : []),
         ...results.map(summarizeResult),
       ].join("\n");
       return result(summary, {
         ok: failed === 0,
         mode: selection.targets.length === 1 ? "single" : "batch",
         files: results,
+        scanTruncated: selection.scanTruncated ?? false,
       });
     },
   });
