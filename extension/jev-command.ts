@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import { hasKey, keyMasked } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport, renderForLLM } from "./compose.ts";
 import { runReview } from "./review.ts";
+import { resolveSafeReviewPath } from "./path-policy.ts";
 
 /**
  * The human-invoked side: `/jev review <path>` and `/jev status`. Shares the exact
@@ -64,9 +64,12 @@ export function registerJevCommand(
         ctx.ui.notify(`jev: missing <path>. ${USAGE}`, "warning");
         return;
       }
-      const p = isAbsolute(pathArg) ? pathArg : resolve(ctx.cwd, pathArg);
-      if (!existsSync(p)) {
-        ctx.ui.notify(`jev: file not found: ${p}`, "error");
+      let p: string;
+      try {
+        p = resolveSafeReviewPath(ctx.cwd, pathArg, "file");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`jev: invalid review target — ${message}`, "error");
         return;
       }
 

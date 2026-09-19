@@ -1,15 +1,29 @@
 {
   "name": "pi-jev-anti-slop",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "type": "module",
-  "description": "TypeSafe Jev code-review judgment for LLM agent review loops: scores code quality dimensions + bug signals, composites them into a flag report the main LLM can read and fix. Gated on TYPESAFE_API_KEY.",
+  "description": "TypeSafe Jev code-review and AI-slop detection for pi agent review loops.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BubbatheVTOG/pi-jev-anti-slop.git"
+  },
+  "homepage": "https://github.com/BubbatheVTOG/pi-jev-anti-slop#readme",
+  "bugs": {
+    "url": "https://github.com/BubbatheVTOG/pi-jev-anti-slop/issues"
+  },
+  "files": [
+    "extension",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "pi-package",
     "typesafe",
     "jev",
     "code-review",
+    "ai-code",
+    "static-analysis",
     "agent"
   ],
   "scripts": {

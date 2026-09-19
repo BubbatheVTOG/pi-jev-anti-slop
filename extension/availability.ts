@@ -27,10 +27,7 @@ export function hasKey(env: NodeJS.ProcessEnv = process.env): boolean {
  return resolveKey(env) !== null;
 }
 
-/** A short, non-secret marker for status displays — never the key itself. */
+/** A non-secret marker for status displays; never reveal key characters or length. */
 export function keyMasked(env: NodeJS.ProcessEnv = process.env): string {
- const k = resolveKey(env);
- if (!k) return "unset";
- if (k.length <= 8) return "set(≤8 chars)";
- return `set(${k.slice(0, 4)}…${k.slice(-4)}, ${k.length} chars)`;
+ return hasKey(env) ? "set" : "unset";
 }

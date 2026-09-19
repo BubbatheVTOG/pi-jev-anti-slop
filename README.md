@@ -31,11 +31,19 @@ One variable does both jobs: it is the **on/off gate** *and* the SDK's **API key
 
 ## Install
 
+From npm:
+
+```sh
+pi install npm:pi-jev-anti-slop
+```
+
+From GitHub:
+
 ```sh
 pi install git:github.com/BubbatheVTOG/pi-jev-anti-slop
 ```
 
-or, for a local checkout:
+Or, for a local checkout:
 
 ```sh
 export TYPESAFE_API_KEY="..."   # your TypeSafe key
@@ -69,7 +77,7 @@ and reads back a structured report. Batch results are independent: every result 
 /jev status                                                 # show key presence (masked) + current thresholds
 ```
 
-`/jev status` never prints the key — only a masked marker and the resolved policy numbers.
+`/jev status` never prints any key characters or its length—only `set` or `unset` and the resolved policy numbers.
 
 ### Example report
 
@@ -113,10 +121,12 @@ extension/
   questions.ts     # the rubric — the ONLY place judgment wording lives (score + noul questions)
   review.ts        # thin SDK boundary: one systemOne() call over shared state → raw judgments
   compose.ts       # PURE policy: raw judgments → verdict + flags (no SDK, no I/O) + the renderer
+  path-policy.ts   # project confinement + sensitive-file rejection for review targets
   jev-tool.ts      # the LLM-callable `jev_review` tool
   jev-command.ts   # the human `/jev review` / `/jev status` command
 tests/
   compose.test.ts  # unit tests for the pure composition logic (no SDK / API / I/O)
+  security.test.ts # key-redaction, path-confinement, and config-validation tests
 ```
 
 **Design choices (each grounded in the live docs):**
@@ -183,5 +193,8 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 ## Security
 
 - The key is the gate and is read only from the environment by the SDK; it is never written into the request or any log.
-- Status displays show a **masked** marker only.
+- Status displays reveal only `set` or `unset`; they never expose key characters or length.
+- File and directory targets are confined to the current project root after resolving symlinks.
+- Likely credential files such as `.env`, `.npmrc`, private keys, and credential JSON files are rejected before code is sent to TypeSafe.
+- Inline `code` is assumed to be deliberately supplied by the caller; do not paste secrets into it.
 - Keep the key server-side; this extension never persists it.

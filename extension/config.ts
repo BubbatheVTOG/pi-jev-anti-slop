@@ -29,7 +29,7 @@ export interface JevConfig {
   bugReviewThreshold: number;
   /** P(yes) at/above which a bug signal routes to block (must fix). */
   bugBlockThreshold: number;
-  /** Composite below this (0..1) → review; below the lower → block. */
+  /** Informational composite context thresholds; concrete findings control verdicts. */
   compositeReviewBelow: number;
   compositeBlockBelow: number;
   /** Scales how strongly the worst bug probability drags the composite down. */
@@ -57,11 +57,13 @@ export const DEFAULTS: JevConfig = {
 
 const isNum = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
-const isNumMap = (v: unknown): v is Record<string, number> =>
-  !!v &&
+const isUnit = (v: unknown): v is number => isNum(v) && v >= 0 && v <= 1;
+const isNonnegative = (v: unknown): v is number => isNum(v) && v >= 0;
+const isWeightMap = (v: unknown): v is Record<string, number> =>
+  Boolean(v) &&
   typeof v === "object" &&
   !Array.isArray(v) &&
-  Object.values(v as Record<string, unknown>).every(isNum);
+  Object.values(v as Record<string, unknown>).every(isNonnegative);
 
 function readBlock(path: string): Partial<JevConfig> {
   try {
@@ -89,25 +91,31 @@ export function resolveConfig(input: {
       : [readBlock(join(input.cwd, ".pi", "settings.json"))]),
   ];
   for (const raw of layers) {
-    if (isNumMap(raw.dimensionWeights))
+    if (isWeightMap(raw.dimensionWeights))
       config.dimensionWeights = {
         ...config.dimensionWeights,
         ...raw.dimensionWeights,
       };
-    if (isNum(raw.dimensionFlagBelow))
+    if (isUnit(raw.dimensionFlagBelow))
       config.dimensionFlagBelow = raw.dimensionFlagBelow;
-    if (isNum(raw.confidenceFloor))
+    if (isUnit(raw.confidenceFloor))
       config.confidenceFloor = raw.confidenceFloor;
-    if (isNum(raw.bugReviewThreshold))
+    if (isUnit(raw.bugReviewThreshold))
       config.bugReviewThreshold = raw.bugReviewThreshold;
-    if (isNum(raw.bugBlockThreshold))
+    if (isUnit(raw.bugBlockThreshold))
       config.bugBlockThreshold = raw.bugBlockThreshold;
-    if (isNum(raw.compositeReviewBelow))
+    if (isUnit(raw.compositeReviewBelow))
       config.compositeReviewBelow = raw.compositeReviewBelow;
-    if (isNum(raw.compositeBlockBelow))
+    if (isUnit(raw.compositeBlockBelow))
       config.compositeBlockBelow = raw.compositeBlockBelow;
-    if (isNum(raw.bugPenaltyWeight))
+    if (isNonnegative(raw.bugPenaltyWeight))
       config.bugPenaltyWeight = raw.bugPenaltyWeight;
+  }
+  if (config.bugBlockThreshold < config.bugReviewThreshold) {
+    config.bugBlockThreshold = config.bugReviewThreshold;
+  }
+  if (config.compositeBlockBelow > config.compositeReviewBelow) {
+    config.compositeBlockBelow = config.compositeReviewBelow;
   }
   return config;
 }

@@ -71,12 +71,9 @@ export function composeReport(
   const bugSignals: BugSignal[] = Object.entries(CHECK_DEFINITIONS).map(
     ([name, definition]) => {
       const probability = raw.nouls[name] ?? 0;
-      const action: Tier =
-        probability >= cfg.bugBlockThreshold
-          ? "block"
-          : probability >= cfg.bugReviewThreshold
-            ? "review"
-            : "pass";
+      let action: Tier = "pass";
+      if (probability >= cfg.bugBlockThreshold) action = "block";
+      else if (probability >= cfg.bugReviewThreshold) action = "review";
       return {
         name,
         category: definition.category,
@@ -169,17 +166,17 @@ export function composeReport(
     flags.push({
       severity: "error",
       kind: "composite",
-      title: "Overall health below block threshold",
+      title: "Overall verdict requires fixes",
       detail:
-        `Composite ${composite.toFixed(2)} < ${cfg.compositeBlockBelow}. Expect rework ` +
-        `rather than a patch; resolve the bug flags first.`,
+        `A block-level concrete finding requires a fix. Composite health is ` +
+        `${composite.toFixed(2)}; resolve the concrete flags first.`,
       confidence: 1,
     });
   } else if (tier === "review") {
     flags.push({
       severity: "warning",
       kind: "composite",
-      title: "Overall health below review threshold",
+      title: "Overall verdict requires review",
       detail:
         `Concrete findings require review. Composite health is ${composite.toFixed(2)}; ` +
         `address the flagged items before considering this change done.`,
@@ -233,8 +230,9 @@ export function renderForLLM(r: ReviewReport): string {
     `Bug signals (P(yes) the defect is present; higher = more likely a real bug):`,
   );
   for (const b of r.bugSignals) {
-    const tag =
-      b.action === "block" ? "FIX" : b.action === "review" ? "review" : "pass";
+    let tag = "pass";
+    if (b.action === "block") tag = "FIX";
+    else if (b.action === "review") tag = "review";
     lines.push(
       `  ${b.name.padEnd(26)} [${b.category ?? "uncategorized"}] ` +
         `P=${b.probability.toFixed(2)}  ${tag}`,

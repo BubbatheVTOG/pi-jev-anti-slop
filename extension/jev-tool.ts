@@ -7,6 +7,7 @@ import { hasKey } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport } from "./compose.ts";
 import { runReview } from "./review.ts";
+import { resolveSafeReviewPath } from "./path-policy.ts";
 import type { ReviewReport } from "./types.ts";
 
 /**
@@ -54,13 +55,13 @@ const PARAMS = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "One absolute or cwd-relative file path. Use `paths` for an explicit group or `directory` for a codebase scan. Cannot be combined with inline `code`.",
+        "One cwd-relative file path, or an absolute path inside the current project root. Use `paths` for an explicit group or `directory` for a codebase scan. Cannot be combined with inline `code`.",
     }),
   ),
   paths: Type.Optional(
     Type.Array(Type.String(), {
       description:
-        "Explicit absolute or cwd-relative file paths. Each file is reviewed independently and returned with its exact normalized path.",
+        "Explicit cwd-relative paths, or absolute paths inside the current project root. Each file is reviewed independently and returned with its exact normalized path.",
       minItems: 1,
       maxItems: DEFAULT_MAX_FILES,
     }),
@@ -68,7 +69,7 @@ const PARAMS = Type.Object({
   directory: Type.Optional(
     Type.String({
       description:
-        "Absolute or cwd-relative directory to scan recursively. Cannot be combined with inline `code`. Defaults to common source-code extensions.",
+        "A cwd-relative directory, or an absolute directory inside the current project root, to scan recursively. Cannot be combined with inline `code`. Defaults to common source-code extensions.",
     }),
   ),
   extensions: Type.Optional(
@@ -155,11 +156,7 @@ function collectFiles(
     }
   };
   visit(root);
-  return { files: files.sort(), truncated };
-}
-
-function resolvePath(cwd: string, path: string): string {
-  return resolve(cwd, path);
+  return { files: files.sort((left, right) => left.localeCompare(right)), truncated };
 }
 
 function readTarget(file: string): ReviewTarget {
@@ -220,20 +217,14 @@ function resolveTargets(
   if (requested.length > 0) {
     const targets: ReviewTarget[] = [];
     for (const requestedPath of requested) {
-      const file = resolvePath(cwd, requestedPath);
+      const file = resolveSafeReviewPath(cwd, requestedPath, "file");
       targets.push(readTarget(file));
     }
     return { targets };
   }
 
   if (params.directory) {
-    const directory = resolvePath(cwd, params.directory);
-    if (!existsSync(directory) || !statSync(directory).isDirectory()) {
-      return {
-        targets: [],
-        selectionError: `directory not found: ${directory}`,
-      };
-    }
+    const directory = resolveSafeReviewPath(cwd, params.directory, "directory");
     const extensions = normalizeExtensions(params.extensions);
     const scan = collectFiles(
       directory,
@@ -250,12 +241,6 @@ function resolveTargets(
     targets: [],
     selectionError: "Provide path, paths, directory, or inline code.",
   };
-}
-
-function displayPath(_cwd: string, file: string): string {
-  // Absolute normalized paths prevent ambiguity when a batch spans directories
-  // or when the agent receives results after changing its working directory.
-  return file;
 }
 
 function summarizeResult(result: FileResult): string {
@@ -282,7 +267,7 @@ export function registerJevReviewTool(
     label: "Jev code review",
     description:
       "Run independent TypeSafe Jev reviews on one file, an explicit group of files, or a whole codebase directory. " +
-      "Use `path` for one file, `paths` for exact files, or `directory` for a recursive scan. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
+      "Use `path` for one file, `paths` for exact files, or `directory` for a recursive scan. Targets must remain inside the current project and sensitive credential files are rejected. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
       "This is a signal to investigate, not proof: verify each item in the code before changing it.",
     promptSnippet:
       "Run jev_review per file after writing code; use paths for a group or directory for a codebase, then fix flags keyed by exact file path and re-run.",
@@ -335,7 +320,7 @@ export function registerJevReviewTool(
 
       const results: FileResult[] = [];
       for (const target of selection.targets) {
-        const file = displayPath(ctx.cwd, target.file);
+        const file = target.file;
         if (target.error || !target.code) {
           results.push({
             file,
