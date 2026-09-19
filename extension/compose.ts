@@ -100,6 +100,9 @@ export function composeReport(
   const bugPenalty =
     (cfg.bugPenaltyWeight / (1 + cfg.bugPenaltyWeight)) * worstBug;
   const composite = clamp01(quality - bugPenalty);
+  let contextTier: Tier = "pass";
+  if (composite < cfg.compositeBlockBelow) contextTier = "block";
+  else if (composite < cfg.compositeReviewBelow) contextTier = "review";
 
   // 4) Verdict (block > review > pass). Composite health is informative, but
   //    does not escalate by itself: a low aggregate score without a concrete
@@ -190,7 +193,7 @@ export function composeReport(
     model: raw.model,
     dimensions,
     bugSignals,
-    composite: { score: composite, tier },
+    composite: { score: composite, tier, contextTier },
     escalate,
     flags,
     raw,
@@ -207,8 +210,8 @@ export function renderForLLM(r: ReviewReport): string {
   lines.push(`## Jev code review — ${r.target ?? "<inline code>"}`);
   lines.push(
     `verdict: ${r.composite.tier.toUpperCase()}   ` +
-      `composite health ${r.composite.score.toFixed(2)} / 1.00   ` +
-      `escalate=${r.escalate}`,
+      `composite health ${r.composite.score.toFixed(2)} / 1.00 ` +
+      `(context=${r.composite.contextTier ?? "pass"})   escalate=${r.escalate}`,
   );
   lines.push("");
   lines.push(

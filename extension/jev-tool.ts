@@ -90,7 +90,7 @@ const PARAMS = Type.Object({
   code: Type.Optional(
     Type.String({
       description:
-        "Inline code or a diff/hunk for one review. Takes precedence over path selection and cannot be combined with a batch target.",
+        "Inline code or a diff/hunk for one review. Cannot be combined with path, paths, or directory.",
     }),
   ),
   language: Type.Optional(
@@ -156,7 +156,10 @@ function collectFiles(
     }
   };
   visit(root);
-  return { files: files.sort((left, right) => left.localeCompare(right)), truncated };
+  return {
+    files: files.sort((left, right) => left.localeCompare(right)),
+    truncated,
+  };
 }
 
 function readTarget(file: string): ReviewTarget {
@@ -278,7 +281,6 @@ export function registerJevReviewTool(
     ],
     parameters: PARAMS,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
       const result = (text: string, details: Record<string, unknown>) => ({
         content: [{ type: "text" as const, text }],
         details,
@@ -289,6 +291,17 @@ export function registerJevReviewTool(
           "jev_review unavailable: TYPESAFE_API_KEY is not set in this environment. Ask the user to export it, then run /reload.",
           { ok: false, reason: "no-key" },
         );
+      }
+
+      let cfg: JevConfig;
+      try {
+        cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return result(`jev_review: invalid configuration: ${message}`, {
+          ok: false,
+          reason: "invalid-config",
+        });
       }
 
       let selection: ReturnType<typeof resolveTargets>;

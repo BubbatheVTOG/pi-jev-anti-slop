@@ -45,7 +45,7 @@ export function resolveSafeReviewPath(
     throw new Error(`review target is not a directory: ${target}`);
   }
   if (expected === "file" && isSensitive(target)) {
-    throw new Error(`refusing to send a potentially sensitive file: ${target}`);
+    throw new Error("refusing to send a potentially sensitive file");
   }
   return target;
 }

@@ -143,7 +143,7 @@ tests/
 
 ## Configuration
 
-All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **global** `~/.pi/agent/settings.json` or a **trusted project's** `.pi/settings.json` under a `jev` block (later layers win, mirroring the cloud/voice toggle precedence). Unknown/invalid values are ignored.
+All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **global** `~/.pi/agent/settings.json` or a **trusted project's** `.pi/settings.json` under a `jev` block (later layers win, mirroring the cloud/voice toggle precedence). Unknown keys and out-of-range values are ignored. Malformed JSON fails visibly instead of silently reporting defaults.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

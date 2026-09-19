@@ -84,14 +84,11 @@ export async function runReview(
  try {
   res = await client.systemOne({ state, questions: built.questions });
  } catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  throw new ReviewError(
-   "request",
-   `TypeSafe review request failed: ${message}`,
-   {
-    cause: error,
-   },
-  );
+  // Do not forward third-party error text: transports may include request
+  // metadata. Keep the original error as the non-rendered cause for debugging.
+  throw new ReviewError("request", "TypeSafe review request failed", {
+   cause: error,
+  });
  }
 
  // SAFETY: `client.systemOne` is typed so that `answers[name]` for a score

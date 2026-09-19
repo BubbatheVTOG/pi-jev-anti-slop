@@ -224,7 +224,13 @@ export interface ReviewReport {
  model: string;
  dimensions: Record<Dimension, DimensionAssessment>;
  bugSignals: BugSignal[];
- composite: { score: number; tier: Tier };
+ composite: {
+  score: number;
+  /** Verdict driven by concrete findings. */
+  tier: Tier;
+  /** Informational tier driven only by configured composite thresholds. */
+  contextTier?: Tier;
+ };
  /** true → hand the flagged items to the main LLM (or a human) to read + fix. */
  escalate: boolean;
  /** Actionable, ordered error → warning → info. The main LLM's work list. */

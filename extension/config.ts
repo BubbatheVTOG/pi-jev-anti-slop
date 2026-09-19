@@ -66,12 +66,19 @@ const isWeightMap = (v: unknown): v is Record<string, number> =>
   Object.values(v as Record<string, unknown>).every(isNonnegative);
 
 function readBlock(path: string): Partial<JevConfig> {
+  if (!existsSync(path)) return {};
   try {
-    if (!existsSync(path)) return {};
     const raw = JSON.parse(readFileSync(path, "utf8")) as { jev?: unknown };
-    return (raw.jev ?? {}) as Partial<JevConfig>;
-  } catch {
-    return {};
+    if (raw.jev === undefined) return {};
+    if (!raw.jev || typeof raw.jev !== "object" || Array.isArray(raw.jev)) {
+      throw new Error('the "jev" setting must be an object');
+    }
+    return raw.jev as Partial<JevConfig>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`could not read Jev configuration ${path}: ${message}`, {
+      cause: error,
+    });
   }
 }
 

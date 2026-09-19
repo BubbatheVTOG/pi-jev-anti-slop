@@ -128,6 +128,7 @@ test("composite policy changes do not escalate without a concrete finding", () =
   const stricter = { ...DEFAULTS, compositeReviewBelow: 0.7 };
   const again = composeReport(raw, stricter, "src/a.ts");
   assert.equal(again.composite.tier, "pass");
+  assert.equal(again.composite.contextTier, "review");
   assert.equal(again.escalate, false);
 });
 

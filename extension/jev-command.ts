@@ -24,7 +24,14 @@ export function registerJevCommand(
   pi.registerCommand("jev", {
     description: "TypeSafe Jev code review: /jev review <path> | /jev status",
     handler: async (args, ctx) => {
-      const cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
+      let cfg: JevConfig;
+      try {
+        cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`jev: invalid configuration — ${message}`, "error");
+        return;
+      }
       const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const sub = (parts[0] ?? "status").toLowerCase();
 
