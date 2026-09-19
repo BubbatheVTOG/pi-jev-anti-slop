@@ -2,7 +2,18 @@
 
 A **TypeSafe [Jev](https://docs.typesafe.ai)** code-review **judgment** for LLM-agent review loops, packaged as a pi extension.
 
-It scores a file or a diff for **bugs** and **code quality** (readability, maintainability, extensibility, testability, cleanliness), composes those signals into a **verdict** (`pass` / `review` / `block`) and a **prioritized flag list**, and hands that to the **main LLM to read the code and fix** — then you re-run until it's clean.
+It scores a file or a diff for **bugs**, **AI-code slop**, and **code quality** (readability, maintainability, extensibility, testability, cleanliness), composes those signals into a **verdict** (`pass` / `review` / `block`) and a **prioritized flag list**, and hands that to the **main LLM to read the code and fix** — then you re-run until it's clean.
+
+The backward-compatible de-slop battery groups narrow checks into six categories:
+
+- **Correctness:** missing returns, boundary errors, semantic mismatches, and races.
+- **Completeness:** stubs, placeholder behavior, fake results, and materially unfinished paths.
+- **Contracts:** unsafe type escapes, API/schema mismatches, ignored inputs, and unvalidated external data.
+- **Errors:** unhandled or swallowed failures, misleading success, and leaked resources.
+- **Security:** injection, authorization gaps, secret exposure, and untrusted path/URL handling.
+- **Design:** speculative abstractions and useless indirection that obscure behavior without adding a real boundary or benefit.
+
+Every check is conditional on relevant code being present. For example, a file with no protected action or external URL should not be flagged for authorization or SSRF.
 
 > **Mental model.** Jev is a *triage* step, not a reviewer that writes prose. Per the [TypeSafe docs](https://docs.typesafe.ai), System One models return **typed judgments + probabilities** — never free-text explanations. So a flag is a **signal to look**, not a confirmed defect. The main agent reads the actual code and writes the real fix. That round trip is the review loop this extension serves.
 
@@ -112,7 +123,7 @@ tests/
 
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
 - **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
-- **Bug detection as a `Noul` battery.** Each high-signal bug class is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing).
+- **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
 - **Confidence is a second axis, not a truth value.** A low-confidence *failing* dimension is marked **uncertain** (escalate, don't hard-flag) — [`confidence`](https://docs.typesafe.ai/confidence.md) is distribution concentration, not correctness.
 - **Policy in code, raw judgments reusable.** The verdict and flag list are a pure function of `(raw, config)` (`compose.ts`). The report keeps the raw judgments so policy can change without a second API call.
 - **Freshness.** A review is about the code *as it is now*; nothing is cached — a review loop re-runs on the current code after each change.
@@ -157,7 +168,7 @@ npm run typecheck    # tsc --noEmit
 npm test             # node --test tests/*.test.ts  (pure composition logic; no API)
 ```
 
-The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment shape (the exact shape `runReview` produces) — clean code → pass, a block-level bug → block + escalate, a low-confidence failing dimension → uncertainty (not a hard flag), and config override re-scoring the same raw without an API call.
+The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment shape (the exact shape `runReview` produces) — clean code → pass, a block-level bug → block + escalate, categorized de-slop findings → actionable review, a low-confidence failing dimension → uncertainty (not a hard flag), and composite policy re-scoring the same raw without an API call.
 
 ---
 

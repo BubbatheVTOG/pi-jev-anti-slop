@@ -1,6 +1,5 @@
 import {
-  BUG_CHECKS,
-  BUG_NAMES,
+  CHECK_DEFINITIONS,
   DIMENSIONS,
   SCORE_MAX,
   type BugSignal,
@@ -69,22 +68,25 @@ export function composeReport(
   }
 
   // 2) Bug signals: threshold each independent noul (guardrails "battery" pattern).
-  const bugSignals: BugSignal[] = BUG_NAMES.map((name) => {
-    const probability = raw.nouls[name] ?? 0;
-    const action: Tier =
-      probability >= cfg.bugBlockThreshold
-        ? "block"
-        : probability >= cfg.bugReviewThreshold
-          ? "review"
-          : "pass";
-    return {
-      name,
-      description: BUG_CHECKS[name],
-      probability,
-      action,
-      flagged: action !== "pass",
-    };
-  });
+  const bugSignals: BugSignal[] = Object.entries(CHECK_DEFINITIONS).map(
+    ([name, definition]) => {
+      const probability = raw.nouls[name] ?? 0;
+      const action: Tier =
+        probability >= cfg.bugBlockThreshold
+          ? "block"
+          : probability >= cfg.bugReviewThreshold
+            ? "review"
+            : "pass";
+      return {
+        name,
+        category: definition.category,
+        description: definition.question,
+        probability,
+        action,
+        flagged: action !== "pass",
+      };
+    },
+  );
 
   // 3) Composite health (0..1, higher = healthier): weighted quality minus a
   //    penalty scaled by the worst bug probability. Weights are renormalized in
@@ -233,7 +235,10 @@ export function renderForLLM(r: ReviewReport): string {
   for (const b of r.bugSignals) {
     const tag =
       b.action === "block" ? "FIX" : b.action === "review" ? "review" : "pass";
-    lines.push(`  ${b.name.padEnd(18)} P=${b.probability.toFixed(2)}  ${tag}`);
+    lines.push(
+      `  ${b.name.padEnd(26)} [${b.category ?? "uncategorized"}] ` +
+        `P=${b.probability.toFixed(2)}  ${tag}`,
+    );
   }
   lines.push("");
   if (r.flags.length > 0) {

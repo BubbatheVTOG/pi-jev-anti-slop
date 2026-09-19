@@ -18,6 +18,8 @@ interface RawOpts {
   bugProb: number;
   /** Per-dimension override (e.g. to make one dimension fail while others pass). */
   override?: Partial<Record<string, { score: number; confidence: number }>>;
+  /** Per-check probability override for focused policy tests. */
+  bugOverride?: Partial<Record<string, number>>;
 }
 
 function makeRaw(opts: RawOpts): RawJudgments {
@@ -31,7 +33,7 @@ function makeRaw(opts: RawOpts): RawJudgments {
     };
   }
   const nouls: Record<string, number> = {};
-  for (const b of BUG_NAMES) nouls[b] = opts.bugProb;
+  for (const b of BUG_NAMES) nouls[b] = opts.bugOverride?.[b] ?? opts.bugProb;
   return { scores, nouls, model: "jev-test", usage: {} };
 }
 
@@ -62,6 +64,27 @@ test("a block-level bug forces block + escalate even when the dimensions look fi
     report.flags.some((f) => f.severity === "error" && f.kind === "bug"),
     "expected an error bug flag",
   );
+});
+
+test("new de-slop checks preserve reports and expose actionable categories", () => {
+  const report = composeReport(
+    makeRaw({
+      defaultScore: 4,
+      defaultConf: 0.9,
+      bugProb: 0,
+      bugOverride: { incomplete_implementation: 0.7 },
+    }),
+    DEFAULTS,
+    "src/a.ts",
+  );
+  assert.equal(report.composite.tier, "review");
+  const signal = report.bugSignals.find(
+    (candidate) => candidate.name === "incomplete_implementation",
+  );
+  assert.equal(signal?.category, "completeness");
+  assert.equal(signal?.action, "review");
+  assert.ok(report.flags.some((flag) => flag.title.includes("incomplete_implementation")));
+  assert.match(renderForLLM(report), /\[completeness\]/);
 });
 
 test("low-confidence failing dimension → uncertainty flag, not a hard dimension flag", () => {
