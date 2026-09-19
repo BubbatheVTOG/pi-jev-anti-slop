@@ -111,7 +111,7 @@ tests/
 **Design choices (each grounded in the live docs):**
 
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
-- **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable).
+- **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
 - **Bug detection as a `Noul` battery.** Each high-signal bug class is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing).
 - **Confidence is a second axis, not a truth value.** A low-confidence *failing* dimension is marked **uncertain** (escalate, don't hard-flag) — [`confidence`](https://docs.typesafe.ai/confidence.md) is distribution concentration, not correctness.
 - **Policy in code, raw judgments reusable.** The verdict and flag list are a pure function of `(raw, config)` (`compose.ts`). The report keeps the raw judgments so policy can change without a second API call.
@@ -131,8 +131,8 @@ All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **
 | `confidenceFloor` | `0.5` | A *flagged* dimension below this confidence becomes **uncertain** (escalate, don't hard-flag). |
 | `bugReviewThreshold` | `0.5` | P(yes) at/above which a bug signal routes to **review**. |
 | `bugBlockThreshold` | `0.85` | P(yes) at/above which a bug signal routes to **block** (must fix). |
-| `compositeReviewBelow` | `0.6` | Composite below this → **review**. |
-| `compositeBlockBelow` | `0.4` | Composite below this → **block**. |
+| `compositeReviewBelow` | `0.6` | Composite context threshold; does not escalate by itself. |
+| `compositeBlockBelow` | `0.4` | Composite context threshold; concrete findings still control escalation. |
 | `bugPenaltyWeight` | `2.0` | How strongly the worst bug probability drags the composite down. |
 
 ```jsonc

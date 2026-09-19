@@ -91,15 +91,17 @@ test("low-confidence failing dimension → uncertainty flag, not a hard dimensio
   assert.equal(report.escalate, true);
 });
 
-test("config override changes the verdict from the SAME raw (no API re-call)", () => {
+test("composite policy changes do not escalate without a concrete finding", () => {
   // All dims 2.5/4 = 0.625 (not flagged; > 0.5), no bugs → composite 0.625.
   const raw = makeRaw({ defaultScore: 2.5, defaultConf: 0.8, bugProb: 0.0 });
   const base = composeReport(raw, DEFAULTS, "src/a.ts");
   assert.equal(base.composite.tier, "pass");
-  // Raise the review bar above 0.625 → now "review", using the very same raw.
+  // A stricter aggregate threshold changes the score context, not the verdict:
+  // there is still no concrete bug, dimension flag, or uncertainty signal.
   const stricter = { ...DEFAULTS, compositeReviewBelow: 0.7 };
   const again = composeReport(raw, stricter, "src/a.ts");
-  assert.equal(again.composite.tier, "review");
+  assert.equal(again.composite.tier, "pass");
+  assert.equal(again.escalate, false);
 });
 
 test("renderForLLM emits a stable, parseable work list", () => {

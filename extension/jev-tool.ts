@@ -145,7 +145,8 @@ function collectFiles(
         return;
       }
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) visit(resolve(directory, entry.name));
+        if (!IGNORED_DIRECTORIES.has(entry.name))
+          visit(resolve(directory, entry.name));
         continue;
       }
       if (entry.isFile() && extensions.has(extname(entry.name).toLowerCase())) {
@@ -189,7 +190,11 @@ function resolveTargets(
     maxFiles?: number;
     code?: string;
   },
- ): { targets: ReviewTarget[]; selectionError?: string; scanTruncated?: boolean } {
+): {
+  targets: ReviewTarget[];
+  selectionError?: string;
+  scanTruncated?: boolean;
+} {
   if (typeof params.code === "string" && params.code.trim() !== "") {
     if (params.path || params.paths?.length || params.directory) {
       return {
@@ -230,7 +235,11 @@ function resolveTargets(
       };
     }
     const extensions = normalizeExtensions(params.extensions);
-    const scan = collectFiles(directory, extensions, params.maxFiles ?? DEFAULT_MAX_FILES);
+    const scan = collectFiles(
+      directory,
+      extensions,
+      params.maxFiles ?? DEFAULT_MAX_FILES,
+    );
     return {
       targets: scan.files.map(readTarget),
       scanTruncated: scan.truncated,
@@ -369,7 +378,9 @@ export function registerJevReviewTool(
       const summary = [
         `Jev per-file review complete: ${successful.length}/${results.length} reviewed${failed ? `, ${failed} failed` : ""}.`,
         ...(selection.scanTruncated
-          ? [`WARNING: directory scan reached the ${params.maxFiles ?? DEFAULT_MAX_FILES}-file cap; review the remaining files separately.`]
+          ? [
+              `WARNING: directory scan reached the ${params.maxFiles ?? DEFAULT_MAX_FILES}-file cap; review the remaining files separately.`,
+            ]
           : []),
         ...results.map(summarizeResult),
       ].join("\n");

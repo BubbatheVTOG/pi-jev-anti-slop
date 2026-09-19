@@ -6,7 +6,11 @@ import type { RawJudgments } from "./types.ts";
 export class ReviewError extends Error {
  readonly kind: "request" | "response";
 
- constructor(kind: "request" | "response", message: string, options?: ErrorOptions) {
+ constructor(
+  kind: "request" | "response",
+  message: string,
+  options?: ErrorOptions,
+ ) {
   super(message, options);
   this.name = "ReviewError";
   this.kind = kind;
@@ -50,7 +54,9 @@ function normalizeScoreAnswer(
  name: string,
 ): RawJudgments["scores"][string] {
  if (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > 4) {
-  throw new Error(`invalid score answer for "${name}": expected a value from 0 to 4`);
+  throw new Error(
+   `invalid score answer for "${name}": expected a value from 0 to 4`,
+  );
  }
  const probabilities = Object.fromEntries(
   Object.entries(answer.probabilities ?? {}).map(([level, probability]) => [
@@ -79,9 +85,13 @@ export async function runReview(
   res = await client.systemOne({ state, questions: built.questions });
  } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  throw new ReviewError("request", `TypeSafe review request failed: ${message}`, {
-   cause: error,
-  });
+  throw new ReviewError(
+   "request",
+   `TypeSafe review request failed: ${message}`,
+   {
+    cause: error,
+   },
+  );
  }
 
  // SAFETY: `client.systemOne` is typed so that `answers[name]` for a score
@@ -112,8 +122,12 @@ export async function runReview(
  } catch (error) {
   if (error instanceof ReviewError) throw error;
   const message = error instanceof Error ? error.message : String(error);
-  throw new ReviewError("response", `TypeSafe review response was invalid: ${message}`, {
-   cause: error,
-  });
+  throw new ReviewError(
+   "response",
+   `TypeSafe review response was invalid: ${message}`,
+   {
+    cause: error,
+   },
+  );
  }
 }

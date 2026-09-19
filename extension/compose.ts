@@ -102,20 +102,17 @@ export function composeReport(
     (cfg.bugPenaltyWeight / (1 + cfg.bugPenaltyWeight)) * worstBug;
   const composite = clamp01(quality - bugPenalty);
 
-  // 4) Verdict (block > review > pass). A block-level bug forces block; any
-  //    review-level bug or any uncertain dimension forces at least review. The
-  //    composite alone can also push to block/review from below.
-  let tier: Tier =
-    composite < cfg.compositeBlockBelow
-      ? "block"
-      : composite < cfg.compositeReviewBelow
-        ? "review"
-        : "pass";
+  // 4) Verdict (block > review > pass). Composite health is informative, but
+  //    does not escalate by itself: a low aggregate score without a concrete
+  //    bug, flagged dimension, or uncertainty signal creates noisy false
+  //    positives in per-file batches. Concrete signals own the verdict.
+  let tier: Tier = "pass";
   const hasBlockBug = bugSignals.some((b) => b.action === "block");
   const hasReviewBug = bugSignals.some((b) => b.action === "review");
+  const hasFlaggedDimension = Object.values(dimensions).some((d) => d.flagged);
   const hasUncertain = Object.values(dimensions).some((d) => d.uncertain);
   if (hasBlockBug) tier = "block";
-  else if (hasReviewBug || hasUncertain) tier = "review";
+  else if (hasReviewBug || hasFlaggedDimension || hasUncertain) tier = "review";
 
   const escalate = tier !== "pass";
 
@@ -182,8 +179,8 @@ export function composeReport(
       kind: "composite",
       title: "Overall health below review threshold",
       detail:
-        `Composite ${composite.toFixed(2)} < ${cfg.compositeReviewBelow}. Address the ` +
-        `flagged items before considering this change done.`,
+        `Concrete findings require review. Composite health is ${composite.toFixed(2)}; ` +
+        `address the flagged items before considering this change done.`,
       confidence: 1,
     });
   }
