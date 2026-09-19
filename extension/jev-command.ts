@@ -13,7 +13,8 @@ import { runReview } from "./review.ts";
  * implementation to drift.
  */
 
-const USAGE = "usage: /jev review <path> [--lang <lang>] [--note <text>]   |   /jev status";
+const USAGE =
+  "usage: /jev review <path> [--lang <lang>] [--note <text>]   |   /jev status";
 
 export function registerJevCommand(
   pi: ExtensionAPI,
@@ -77,14 +78,25 @@ export function registerJevCommand(
         else if (parts[i] === "--note" && parts[i + 1]) note = parts[++i];
       }
 
-      const code = readFileSync(p, "utf8");
-      ctx.ui.notify(`jev: reviewing ${p} — calling TypeSafe (this can take a few seconds)…`, "info");
       try {
-        const raw = await runReview(client, { path: p, language: language ?? "unknown", note, code });
+        const code = readFileSync(p, "utf8");
+        ctx.ui.notify(
+          `jev: reviewing ${p} — calling TypeSafe (this can take a few seconds)…`,
+          "info",
+        );
+        const raw = await runReview(client, {
+          path: p,
+          language: language ?? "unknown",
+          note,
+          code,
+        });
         const report = composeReport(raw, cfg, p);
         ctx.ui.notify(renderForLLM(report), "info");
       } catch (e) {
-        ctx.ui.notify(`jev: review failed — ${e instanceof Error ? e.message : String(e)}`, "error");
+        ctx.ui.notify(
+          `jev: review failed — ${e instanceof Error ? e.message : String(e)}`,
+          "error",
+        );
       }
     },
   });

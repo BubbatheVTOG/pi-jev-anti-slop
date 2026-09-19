@@ -42,12 +42,14 @@ Then `/reload`. The `jev_review` tool and `/jev` command appear only while `TYPE
 When the extension is active, the agent gets a `jev_review` tool. In a review loop you say things like *"review `src/foo.ts` before I commit"* and the agent calls:
 
 ```
-jev_review(path: "src/foo.ts")          # review a file
+jev_review(path: "src/foo.ts")          # review one file
+jev_review(paths: ["src/a.ts", "src/b.ts"]) # review an explicit group
+jev_review(directory: "src", extensions: [".ts", ".tsx"]) # scan a codebase area
 jev_review(code: "<the diff>")          # review a changed hunk (preferred in a loop)
 jev_review(path: "src/foo.ts", language: "typescript", note: "refactor for the X feature")
 ```
 
-and reads back a structured report. **If `escalate=true` or there are `error` flags, the agent reads the file, fixes the flagged items, and re-runs** until `escalate=false`.
+and reads back a structured report. Batch results are independent: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes the flagged items, and re-runs** until the file is clear.
 
 ### The human command
 
@@ -165,7 +167,7 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 - **Jev accepts text only** (no images/audio/video). Its primary language is English; other languages work but with lower accuracy.
 - **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large files are truncated (see `MAX_CODE_CHARS`) — prefer passing the changed hunk.
 - **It does not explain or fix.** Wording in flags is authored by this extension from the judgment text; the explanation and the fix come from the main LLM (or you).
-- **Cost/latency.** One `systemOne` call per review. Measure your real budget before wiring it into a hot loop.
+- **Cost/latency.** One `systemOne` call per file. A directory or group review therefore costs one request per discovered file; `maxFiles` defaults to 200 for directory scans. Measure your real budget before wiring it into a hot loop.
 
 ## Security
 

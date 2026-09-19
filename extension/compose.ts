@@ -30,13 +30,21 @@ const clamp01 = (n: number): number => {
 };
 
 /** Ordering for the work list: error first, then warning, then info. */
-const SEVERITY_RANK: Record<FlagSeverity, number> = { error: 0, warning: 1, info: 2 };
+const SEVERITY_RANK: Record<FlagSeverity, number> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+};
 
 /** A weight that is a positive finite number, else 0. */
 const positive = (w: number | undefined): number =>
   typeof w === "number" && Number.isFinite(w) && w > 0 ? w : 0;
 
-export function composeReport(raw: RawJudgments, cfg: JevConfig, target?: string): ReviewReport {
+export function composeReport(
+  raw: RawJudgments,
+  cfg: JevConfig,
+  target?: string,
+): ReviewReport {
   // 1) Per-dimension assessment. Normalize raw/(rubric-1) → 0..1 (1 = best).
   //    A low score is "flagged"; a flagged score WITH low confidence is "uncertain"
   //    (escalate, do not hard-flag) — confidence is distribution concentration, not
@@ -69,19 +77,29 @@ export function composeReport(raw: RawJudgments, cfg: JevConfig, target?: string
         : probability >= cfg.bugReviewThreshold
           ? "review"
           : "pass";
-    return { name, description: BUG_CHECKS[name], probability, action, flagged: action !== "pass" };
+    return {
+      name,
+      description: BUG_CHECKS[name],
+      probability,
+      action,
+      flagged: action !== "pass",
+    };
   });
 
   // 3) Composite health (0..1, higher = healthier): weighted quality minus a
   //    penalty scaled by the worst bug probability. Weights are renormalized in
   //    code so they sum to 1.
-  const weightSum = DIMENSIONS.reduce((s, d) => s + positive(cfg.dimensionWeights[d]), 0) || 1;
+  const weightSum =
+    DIMENSIONS.reduce((s, d) => s + positive(cfg.dimensionWeights[d]), 0) || 1;
   let quality = 0;
   for (const dim of DIMENSIONS) {
-    quality += (positive(cfg.dimensionWeights[dim]) / weightSum) * dimensions[dim].normalized;
+    quality +=
+      (positive(cfg.dimensionWeights[dim]) / weightSum) *
+      dimensions[dim].normalized;
   }
   const worstBug = bugSignals.reduce((m, b) => Math.max(m, b.probability), 0);
-  const bugPenalty = (cfg.bugPenaltyWeight / (1 + cfg.bugPenaltyWeight)) * worstBug;
+  const bugPenalty =
+    (cfg.bugPenaltyWeight / (1 + cfg.bugPenaltyWeight)) * worstBug;
   const composite = clamp01(quality - bugPenalty);
 
   // 4) Verdict (block > review > pass). A block-level bug forces block; any
@@ -197,7 +215,9 @@ export function renderForLLM(r: ReviewReport): string {
       `escalate=${r.escalate}`,
   );
   lines.push("");
-  lines.push(`Dimensions (0=worst → 1=best, normalized from Jev's 0–4 rubric; conf = Jev confidence):`);
+  lines.push(
+    `Dimensions (0=worst → 1=best, normalized from Jev's 0–4 rubric; conf = Jev confidence):`,
+  );
   for (const dim of DIMENSIONS) {
     const d = r.dimensions[dim];
     const marks: string[] = [];
@@ -210,20 +230,29 @@ export function renderForLLM(r: ReviewReport): string {
     );
   }
   lines.push("");
-  lines.push(`Bug signals (P(yes) the defect is present; higher = more likely a real bug):`);
+  lines.push(
+    `Bug signals (P(yes) the defect is present; higher = more likely a real bug):`,
+  );
   for (const b of r.bugSignals) {
-    const tag = b.action === "block" ? "FIX" : b.action === "review" ? "review" : "pass";
+    const tag =
+      b.action === "block" ? "FIX" : b.action === "review" ? "review" : "pass";
     lines.push(`  ${b.name.padEnd(18)} P=${b.probability.toFixed(2)}  ${tag}`);
   }
   lines.push("");
   if (r.flags.length > 0) {
-    lines.push(`Work list (error → warning → info); read the file and fix these before continuing:`);
+    lines.push(
+      `Work list (error → warning → info); read the file and fix these before continuing:`,
+    );
     r.flags.forEach((f, i) => {
-      lines.push(`  ${i + 1}. [${f.severity}] ${f.title}  (signal confidence ${f.confidence.toFixed(2)})`);
+      lines.push(
+        `  ${i + 1}. [${f.severity}] ${f.title}  (signal confidence ${f.confidence.toFixed(2)})`,
+      );
       lines.push(`       ${f.detail}`);
     });
   } else {
-    lines.push(`No flags — nothing below threshold. Proceed, but still verify the change works.`);
+    lines.push(
+      `No flags — nothing below threshold. Proceed, but still verify the change works.`,
+    );
   }
   lines.push("");
   lines.push(

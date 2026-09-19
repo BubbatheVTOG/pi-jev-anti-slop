@@ -22,15 +22,24 @@ import { registerJevCommand } from "./jev-command.ts";
 import { registerJevReviewTool } from "./jev-tool.ts";
 
 export default function jevAntiSlop(pi: ExtensionAPI): void {
-  // No key → silent no-op; nothing is registered.
-  if (!hasKey()) return;
+ // No key → silent no-op; nothing is registered.
+ if (!hasKey()) return;
 
-  // One client for the process. No `model` is passed: the SDK uses its default
-  // (currently "jev-latest"), so we never hardcode a version that can go stale.
-  const client = new TypeSafeClient();
-  const getConfig = (cwd: string, projectTrusted: boolean): ReturnType<typeof resolveConfig> =>
-    resolveConfig({ cwd, projectTrusted });
+ // One client for the process. No `model` is passed: the SDK uses its default
+ // (currently "jev-latest"), so we never hardcode a version that can go stale.
+ let client: TypeSafeClient;
+ try {
+  client = new TypeSafeClient();
+ } catch {
+  // A malformed key or invalid SDK configuration must not break pi startup.
+  // The extension remains inactive until the environment is corrected and pi reloads.
+  return;
+ }
+ const getConfig = (
+  cwd: string,
+  projectTrusted: boolean,
+ ): ReturnType<typeof resolveConfig> => resolveConfig({ cwd, projectTrusted });
 
-  registerJevReviewTool(pi, client, getConfig);
-  registerJevCommand(pi, client, getConfig);
+ registerJevReviewTool(pi, client, getConfig);
+ registerJevCommand(pi, client, getConfig);
 }

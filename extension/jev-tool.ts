@@ -1,42 +1,223 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { extname, relative, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
-import { hasKey, keyMasked } from "./availability.ts";
+import { hasKey } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
-import { composeReport, renderForLLM } from "./compose.ts";
+import { composeReport } from "./compose.ts";
 import { runReview } from "./review.ts";
+import type { ReviewReport } from "./types.ts";
 
 /**
- * The LLM-callable side of the reviewer: a `jev_review` tool the main agent
- * invokes in its review loop. It is the only consumer of `runReview`/`composeReport`
- * besides the /jev command; both share the same core.
+ * LLM-callable code review. A request can target one file, an explicit group,
+ * or a directory. Every discovered file gets its own independent Jev request
+ * and its result retains the exact normalized file path.
  */
 
-/** Never ship a whole large file into the model; scope to the changed hunk when possible. */
 const MAX_CODE_CHARS = 200_000;
+const DEFAULT_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".kt",
+  ".rb",
+  ".php",
+  ".cs",
+  ".cpp",
+  ".c",
+  ".h",
+  ".hpp",
+];
+const IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  ".next",
+  ".venv",
+  "venv",
+]);
+const DEFAULT_MAX_FILES = 200;
 
 const PARAMS = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "Absolute or cwd-relative path to the file to review. Ignored when `code` is also provided.",
+        "One absolute or cwd-relative file path. Use `paths` for an explicit group or `directory` for a codebase scan. Cannot be combined with inline `code`.",
+    }),
+  ),
+  paths: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Explicit absolute or cwd-relative file paths. Each file is reviewed independently and returned with its exact normalized path.",
+      minItems: 1,
+      maxItems: DEFAULT_MAX_FILES,
+    }),
+  ),
+  directory: Type.Optional(
+    Type.String({
+      description:
+        "Absolute or cwd-relative directory to scan recursively. Cannot be combined with inline `code`. Defaults to common source-code extensions.",
+    }),
+  ),
+  extensions: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Extensions to include during a directory scan, such as [\".ts\", \".tsx\"]. Defaults to common source-code extensions.",
+      minItems: 1,
+      maxItems: 50,
+    }),
+  ),
+  maxFiles: Type.Optional(
+    Type.Integer({
+      description: `Maximum files in a directory scan; default ${DEFAULT_MAX_FILES}.`,
+      minimum: 1,
+      maximum: DEFAULT_MAX_FILES,
     }),
   ),
   code: Type.Optional(
     Type.String({
       description:
-        "Inline code (a diff/hunk or a full file) to review. Takes precedence over `path` — in a review loop, prefer passing the changed hunk.",
+        "Inline code or a diff/hunk for one review. Takes precedence over path selection and cannot be combined with a batch target.",
     }),
   ),
   language: Type.Optional(
-    Type.String({ description: "Programming language of the code (e.g. typescript). Helps Jev; optional." }),
+    Type.String({ description: "Programming language of the code; optional for file and directory reviews." }),
   ),
   note: Type.Optional(
-    Type.String({ description: "Context about the change (intent, constraints). Included in the state; optional." }),
+    Type.String({ description: "Context about the change or review constraints; optional." }),
   ),
 });
+
+type ReviewTarget = { file: string; code: string; error?: string };
+type FileResult = {
+  file: string;
+  ok: true;
+  report: ReviewReport;
+} | {
+  file: string;
+  ok: false;
+  error: string;
+};
+
+function normalizeExtensions(extensions: string[] | undefined): Set<string> {
+  return new Set((extensions ?? DEFAULT_EXTENSIONS).map((value) => {
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
+  }));
+}
+
+function collectFiles(root: string, extensions: Set<string>, maxFiles: number): string[] {
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    if (files.length >= maxFiles) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (files.length >= maxFiles) return;
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRECTORIES.has(entry.name)) visit(resolve(directory, entry.name));
+        continue;
+      }
+      if (entry.isFile() && extensions.has(extname(entry.name).toLowerCase())) {
+        files.push(resolve(directory, entry.name));
+      }
+    }
+  };
+  visit(root);
+  return files.sort();
+}
+
+function resolvePath(cwd: string, path: string): string {
+  return resolve(cwd, path);
+}
+
+function readTarget(file: string): ReviewTarget {
+  try {
+    if (!existsSync(file)) return { file, code: "", error: "file not found" };
+    if (!statSync(file).isFile()) return { file, code: "", error: "not a regular file" };
+    const code = readFileSync(file, "utf8");
+    return code.trim() === "" ? { file, code: "", error: "file is empty" } : { file, code };
+  } catch (error) {
+    return { file, code: "", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function resolveTargets(
+  cwd: string,
+  params: {
+    path?: string;
+    paths?: string[];
+    directory?: string;
+    extensions?: string[];
+    maxFiles?: number;
+    code?: string;
+  },
+): { targets: ReviewTarget[]; selectionError?: string } {
+  if (typeof params.code === "string" && params.code.trim() !== "") {
+    if (params.path || params.paths?.length || params.directory) {
+      return { targets: [], selectionError: "`code` cannot be combined with path, paths, or directory." };
+    }
+    return { targets: [{ file: "<inline>", code: params.code }] };
+  }
+
+  let requested: string[] = [];
+  if (params.paths?.length) requested = params.paths;
+  else if (params.path) requested = [params.path];
+
+  if (requested.length > 0 && params.directory) {
+    return { targets: [], selectionError: "Use either path/paths or directory, not both." };
+  }
+
+  if (requested.length > 0) {
+    const targets: ReviewTarget[] = [];
+    for (const requestedPath of requested) {
+      const file = resolvePath(cwd, requestedPath);
+      targets.push(readTarget(file));
+    }
+    return { targets };
+  }
+
+  if (params.directory) {
+    const directory = resolvePath(cwd, params.directory);
+    if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+      return { targets: [], selectionError: `directory not found: ${directory}` };
+    }
+    const extensions = normalizeExtensions(params.extensions);
+    return {
+      targets: collectFiles(directory, extensions, params.maxFiles ?? DEFAULT_MAX_FILES)
+        .map(readTarget),
+    };
+  }
+
+  return { targets: [], selectionError: "Provide path, paths, directory, or inline code." };
+}
+
+function displayPath(cwd: string, file: string): string {
+  if (file === "<inline>") return file;
+  const relativePath = relative(cwd, file);
+  return relativePath && !relativePath.startsWith("..") ? relativePath : file;
+}
+
+function summarizeResult(result: FileResult): string {
+  if (!result.ok) return `\n## ${result.file}\nERROR: ${result.error}`;
+  const report = result.report;
+  return [
+    `\n## ${result.file}`,
+    `verdict: ${report.composite.tier.toUpperCase()}   composite=${report.composite.score.toFixed(2)}   escalate=${report.escalate}`,
+    `flags: ${report.flags.length}`,
+    ...report.flags.map((flag, index) => `  ${index + 1}. [${flag.severity}] ${flag.title} — ${flag.detail}`),
+  ].join("\n");
+}
 
 export function registerJevReviewTool(
   pi: ExtensionAPI,
@@ -47,78 +228,96 @@ export function registerJevReviewTool(
     name: "jev_review",
     label: "Jev code review",
     description:
-      "Run a TypeSafe Jev code review on a file or a diff and get a structured flag report to act on. " +
-      "Pass a file `path` (or the changed hunk as inline `code`). It returns: per-dimension quality " +
-      "scores (readability, maintainability, extensibility, testability, cleanliness), bug signals with " +
-      "P(yes), an overall verdict (pass/review/block), an escalate flag, and a prioritized work list. " +
-      "This is a signal to investigate, not a proof: verify each item in the code before changing it.",
+      "Run independent TypeSafe Jev reviews on one file, an explicit group of files, or a whole codebase directory. " +
+      "Use `path` for one file, `paths` for exact files, or `directory` for a recursive scan. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
+      "This is a signal to investigate, not proof: verify each item in the code before changing it.",
     promptSnippet:
-      "After writing or editing code, run jev_review on the change (file path, or the diff as `code`); " +
-      "read the file and fix any flagged items, then re-run until escalate=false.",
+      "Run jev_review per file after writing code; use paths for a group or directory for a codebase, then fix flags keyed by exact file path and re-run.",
     promptGuidelines: [
-      "In your review loop, call jev_review on code you just wrote or changed before declaring it done — pass the file path, or the changed hunk as `code`.",
-      "If the report shows error flags or escalate=true, read the file, fix each flagged item, and re-run jev_review to confirm the flags clear.",
-      "Treat every flag as a signal to investigate, not a confirmed defect — verify it in the code before editing.",
+      "Use `path` for one file, `paths` for an explicit group, or `directory` to review a whole codebase recursively.",
+      "Treat every returned file independently: use the exact `file` field to read and fix only that file, then re-run Jev for the changed files.",
+      "A batch contains one TypeSafe request per file; do not treat a composite-only verdict as proof of a defect.",
     ],
     parameters: PARAMS,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
-      const result = (text: string, details: Record<string, unknown>) =>
-        ({ content: [{ type: "text" as const, text }], details });
+      const result = (text: string, details: Record<string, unknown>) => ({
+        content: [{ type: "text" as const, text }],
+        details,
+      });
 
-      if (!hasKey())
+      if (!hasKey()) {
         return result(
-          "jev_review unavailable: TYPESAFE_API_KEY is not set in this environment. " +
-            "Ask the user to export it, then run /reload (a fresh session also works).",
+          "jev_review unavailable: TYPESAFE_API_KEY is not set in this environment. Ask the user to export it, then run /reload.",
           { ok: false, reason: "no-key" },
         );
-
-      // Resolve the code: inline `code` wins; otherwise read `path` fresh (never cached).
-      let code = typeof params.code === "string" ? params.code : "";
-      let target: string | undefined;
-      if (code.trim() === "" && typeof params.path === "string" && params.path.trim() !== "") {
-        const p = isAbsolute(params.path) ? params.path : resolve(ctx.cwd, params.path);
-        if (!existsSync(p))
-          return result(`jev_review: file not found: ${p}`, { ok: false, reason: "not-found", path: p });
-        code = readFileSync(p, "utf8");
-        target = p;
-      }
-      if (code.trim() === "")
-        return result(
-          "jev_review: nothing to review — provide either `code` (inline) or an existing `path`.",
-          { ok: false, reason: "empty" },
-        );
-
-      let truncated = false;
-      if (code.length > MAX_CODE_CHARS) {
-        code = code.slice(0, MAX_CODE_CHARS);
-        truncated = true;
       }
 
-      // All state values are strings (Jev accepts text only); fold truncation into `note`.
-      const note =
-        (truncated
-          ? "[note: the file was truncated for this review; read the full file on disk] "
-          : "") + (params.note ?? "");
-      const state = {
-        path: target ?? params.path ?? "<inline>",
-        language: params.language ?? "unknown",
-        note,
-        code,
-      };
-
+      let selection: ReturnType<typeof resolveTargets>;
       try {
-        const raw = await runReview(client, state);
-        const report = composeReport(raw, cfg, state.path);
-        return result(renderForLLM(report), { ok: true, report });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return result(
-          `jev_review: the TypeSafe call failed (${msg}). The automated review could not run — ` +
-            `fall back to your own judgment and say the automated review was unavailable.`,
-          { ok: false, reason: "api-error", error: msg, keyMasked: keyMasked() },
-        );
+        selection = resolveTargets(ctx.cwd, params);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return result(`jev_review: could not resolve review targets: ${message}`, {
+          ok: false,
+          reason: "target-resolution",
+          error: message,
+        });
       }
+      if (selection.selectionError) {
+        return result(`jev_review: ${selection.selectionError}`, {
+          ok: false,
+          reason: "invalid-targets",
+        });
+      }
+      if (selection.targets.length === 0) {
+        return result("jev_review: no matching source files found.", {
+          ok: false,
+          reason: "no-files",
+        });
+      }
+
+      const results: FileResult[] = [];
+      for (const target of selection.targets) {
+        const file = displayPath(ctx.cwd, target.file);
+        if (target.error || !target.code) {
+          results.push({ file, ok: false, error: target.error ?? "file is empty" });
+          continue;
+        }
+        let code = target.code;
+        let note = params.note ?? "";
+        if (code.length > MAX_CODE_CHARS) {
+          code = code.slice(0, MAX_CODE_CHARS);
+          note = `[note: file was truncated for this review; read the full file on disk] ${note}`;
+        }
+        try {
+          const raw = await runReview(client, {
+            path: file,
+            language: params.language ?? (extname(file).slice(1) || "unknown"),
+            note: `per-file review: judge only ${file}; ${note}`,
+            code,
+          });
+          results.push({ file, ok: true, report: composeReport(raw, cfg, file) });
+        } catch (error) {
+          results.push({
+            file,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      const successful = results.filter((item): item is Extract<FileResult, { ok: true }> => item.ok);
+      const failed = results.length - successful.length;
+      const summary = [
+        `Jev per-file review complete: ${successful.length}/${results.length} reviewed${failed ? `, ${failed} failed` : ""}.`,
+        ...results.map(summarizeResult),
+      ].join("\n");
+      return result(summary, {
+        ok: failed === 0,
+        mode: selection.targets.length === 1 ? "single" : "batch",
+        files: results,
+      });
     },
   });
 }

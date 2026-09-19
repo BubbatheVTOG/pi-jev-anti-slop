@@ -98,7 +98,8 @@ export function buildReviewQuestions(): ReviewQuestions {
       `Review the supplied code. Answer only about the code as written. ${BUG_CHECKS[name]}`,
       {
         true: "Yes — there is a concrete, plausible instance of this in the code as written.",
-        false: "No — the code as written does not exhibit this, or the relevant code is not present.",
+        false:
+          "No — the code as written does not exhibit this, or the relevant code is not present.",
       },
     );
   }

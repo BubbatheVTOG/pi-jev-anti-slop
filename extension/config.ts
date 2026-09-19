@@ -55,7 +55,8 @@ export const DEFAULTS: JevConfig = {
 
 // ── I/O-boundary decoders: one per key; unknown in → validated or ignored ────
 
-const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isNum = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
 const isNumMap = (v: unknown): v is Record<string, number> =>
   !!v &&
   typeof v === "object" &&
@@ -89,14 +90,24 @@ export function resolveConfig(input: {
   ];
   for (const raw of layers) {
     if (isNumMap(raw.dimensionWeights))
-      config.dimensionWeights = { ...config.dimensionWeights, ...raw.dimensionWeights };
-    if (isNum(raw.dimensionFlagBelow)) config.dimensionFlagBelow = raw.dimensionFlagBelow;
-    if (isNum(raw.confidenceFloor)) config.confidenceFloor = raw.confidenceFloor;
-    if (isNum(raw.bugReviewThreshold)) config.bugReviewThreshold = raw.bugReviewThreshold;
-    if (isNum(raw.bugBlockThreshold)) config.bugBlockThreshold = raw.bugBlockThreshold;
-    if (isNum(raw.compositeReviewBelow)) config.compositeReviewBelow = raw.compositeReviewBelow;
-    if (isNum(raw.compositeBlockBelow)) config.compositeBlockBelow = raw.compositeBlockBelow;
-    if (isNum(raw.bugPenaltyWeight)) config.bugPenaltyWeight = raw.bugPenaltyWeight;
+      config.dimensionWeights = {
+        ...config.dimensionWeights,
+        ...raw.dimensionWeights,
+      };
+    if (isNum(raw.dimensionFlagBelow))
+      config.dimensionFlagBelow = raw.dimensionFlagBelow;
+    if (isNum(raw.confidenceFloor))
+      config.confidenceFloor = raw.confidenceFloor;
+    if (isNum(raw.bugReviewThreshold))
+      config.bugReviewThreshold = raw.bugReviewThreshold;
+    if (isNum(raw.bugBlockThreshold))
+      config.bugBlockThreshold = raw.bugBlockThreshold;
+    if (isNum(raw.compositeReviewBelow))
+      config.compositeReviewBelow = raw.compositeReviewBelow;
+    if (isNum(raw.compositeBlockBelow))
+      config.compositeBlockBelow = raw.compositeBlockBelow;
+    if (isNum(raw.bugPenaltyWeight))
+      config.bugPenaltyWeight = raw.bugPenaltyWeight;
   }
   return config;
 }

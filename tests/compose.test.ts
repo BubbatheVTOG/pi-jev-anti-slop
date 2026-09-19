@@ -36,18 +36,32 @@ function makeRaw(opts: RawOpts): RawJudgments {
 }
 
 test("clean code → pass, no flags, escalate=false", () => {
-  const report = composeReport(makeRaw({ defaultScore: 4, defaultConf: 0.9, bugProb: 0.05 }), DEFAULTS, "src/a.ts");
+  const report = composeReport(
+    makeRaw({ defaultScore: 4, defaultConf: 0.9, bugProb: 0.05 }),
+    DEFAULTS,
+    "src/a.ts",
+  );
   assert.equal(report.composite.tier, "pass");
   assert.equal(report.escalate, false);
   assert.deepEqual(report.flags, []);
-  assert.ok(report.composite.score > 0.9, `expected high composite, got ${report.composite.score}`);
+  assert.ok(
+    report.composite.score > 0.9,
+    `expected high composite, got ${report.composite.score}`,
+  );
 });
 
 test("a block-level bug forces block + escalate even when the dimensions look fine", () => {
-  const report = composeReport(makeRaw({ defaultScore: 3.5, defaultConf: 0.9, bugProb: 0.9 }), DEFAULTS, "src/a.ts");
+  const report = composeReport(
+    makeRaw({ defaultScore: 3.5, defaultConf: 0.9, bugProb: 0.9 }),
+    DEFAULTS,
+    "src/a.ts",
+  );
   assert.equal(report.composite.tier, "block");
   assert.equal(report.escalate, true);
-  assert.ok(report.flags.some((f) => f.severity === "error" && f.kind === "bug"), "expected an error bug flag");
+  assert.ok(
+    report.flags.some((f) => f.severity === "error" && f.kind === "bug"),
+    "expected an error bug flag",
+  );
 });
 
 test("low-confidence failing dimension → uncertainty flag, not a hard dimension flag", () => {
@@ -65,8 +79,14 @@ test("low-confidence failing dimension → uncertainty flag, not a hard dimensio
   assert.equal(report.dimensions.readability.flagged, true);
   assert.equal(report.dimensions.maintainability.flagged, false);
   // Uncertainty is flagged; a plain dimension flag is NOT emitted for the uncertain dim.
-  assert.ok(report.flags.some((f) => f.kind === "uncertainty"), "expected an uncertainty flag");
-  assert.ok(!report.flags.some((f) => f.kind === "dimension"), "expected no hard dimension flag");
+  assert.ok(
+    report.flags.some((f) => f.kind === "uncertainty"),
+    "expected an uncertainty flag",
+  );
+  assert.ok(
+    !report.flags.some((f) => f.kind === "dimension"),
+    "expected no hard dimension flag",
+  );
   assert.equal(report.composite.tier, "review");
   assert.equal(report.escalate, true);
 });
@@ -83,7 +103,11 @@ test("config override changes the verdict from the SAME raw (no API re-call)", (
 });
 
 test("renderForLLM emits a stable, parseable work list", () => {
-  const report = composeReport(makeRaw({ defaultScore: 1, defaultConf: 0.6, bugProb: 0.9 }), DEFAULTS, "src/a.ts");
+  const report = composeReport(
+    makeRaw({ defaultScore: 1, defaultConf: 0.6, bugProb: 0.9 }),
+    DEFAULTS,
+    "src/a.ts",
+  );
   const text = renderForLLM(report);
   assert.match(text, /## Jev code review/);
   assert.ok(text.includes("src/a.ts"));
