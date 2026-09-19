@@ -41,120 +41,120 @@ export const SCORE_MAX = SCORE_RUBRIC_SIZE - 1;
  * judgment (one per label, per the primitives guidance).
  */
 export const CHECK_CATEGORIES = [
-  "correctness",
-  "completeness",
-  "contracts",
-  "errors",
-  "security",
-  "design",
+ "correctness",
+ "completeness",
+ "contracts",
+ "errors",
+ "security",
+ "design",
 ] as const;
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
 
 export interface CheckDefinition {
-  category: CheckCategory;
-  question: string;
+ category: CheckCategory;
+ question: string;
 }
 
 /** Narrow, independently actionable checks. Existing check names stay stable. */
 export const CHECK_DEFINITIONS: Record<string, CheckDefinition> = {
-  missing_return: {
-    category: "correctness",
-    question:
-      "Is there any function, method, or branch that can complete without returning a value that its contract (its name, its declared type, or the code that calls it) requires — i.e. it falls off the end or yields an unintended/undefined value?",
-  },
-  unhandled_error: {
-    category: "errors",
-    question:
-      "Is there any fallible operation (async call, I/O, parse/de-serialization, index access, division, an external SDK call) whose failure path (throw, error, reject, exception) is never handled and would crash the process or silently produce wrong results?",
-  },
-  bounds_offbyone: {
-    category: "correctness",
-    question:
-      "Does any index, offset, slice, or loop boundary look like it could read or write out of range (off-by-one, empty-collection access, or a boundary that does not match the collection size)?",
-  },
-  resource_leak: {
-    category: "errors",
-    question:
-      "Is any resource (file, connection, lock, subscription, timer, stream, DB transaction) acquired but not released on every control-flow path, including the error path?",
-  },
-  semantic_mismatch: {
-    category: "correctness",
-    question:
-      "Does any piece of logic contradict its own name, an adjacent comment, or the clear expectation of the code that calls it — a sign of a semantic/logic bug rather than a style issue?",
-  },
-  race_concurrency: {
-    category: "correctness",
-    question:
-      "Is there any shared mutable state, or any interleaving of asynchronous/parallel work, that could produce a race, a lost update, or data corruption?",
-  },
-  incomplete_implementation: {
-    category: "completeness",
-    question:
-      "Does executable code contain a stub, placeholder, TODO implementation, hard-coded fake result, empty required handler, or not-implemented path that makes the feature materially incomplete? Ignore TODOs that describe optional future improvements without affecting the current contract.",
-  },
-  unsafe_type_escape: {
-    category: "contracts",
-    question:
-      "Does the code use any, an unchecked cast, a double cast, a non-null assertion, or another type-system escape without a nearby runtime check or invariant that makes the operation safe? Judge semantics, not the mere presence of a cast.",
-  },
-  contract_mismatch: {
-    category: "contracts",
-    question:
-      "Does the implementation violate a declared type, public API, schema, parameter meaning, return contract, or caller-visible behavior, including accepting important input and silently ignoring it?",
-  },
-  unchecked_external_data: {
-    category: "contracts",
-    question:
-      "Is untrusted or external data used as a trusted typed value without validation at the boundary, in a way that could cause incorrect behavior or failure? Return false when the code does not process external data.",
-  },
-  swallowed_error: {
-    category: "errors",
-    question:
-      "Does any catch, callback, or fallback discard a meaningful failure without recovery, propagation, or an intentional documented default, thereby hiding incorrect behavior?",
-  },
-  misleading_success: {
-    category: "errors",
-    question:
-      "Can a failed or partially failed operation be reported to its caller as success, including returning a success value after suppressing an error or completing only part of required state changes?",
-  },
-  injection_risk: {
-    category: "security",
-    question:
-      "Is untrusted input interpolated or concatenated into a shell command, query, HTML, code, or another interpreter sink without appropriate parameterization or escaping? Return false when no such source-to-sink path is present.",
-  },
-  authorization_gap: {
-    category: "security",
-    question:
-      "Does code that performs a protected or user-scoped action lack an authorization check required at this boundary, or confuse authentication with authorization? Return false when this file exposes no protected action or authorization is clearly enforced by its contract.",
-  },
-  secret_exposure: {
-    category: "security",
-    question:
-      "Could this code expose credentials, tokens, personal data, or other sensitive values through source literals, logs, errors, telemetry, or returned output?",
-  },
-  untrusted_path_or_url: {
-    category: "security",
-    question:
-      "Can untrusted input control a filesystem path or outbound URL without confinement or an allowlist, creating path traversal, local-file access, or server-side request forgery risk? Return false when no untrusted path or URL exists.",
-  },
-  speculative_abstraction: {
-    category: "design",
-    question:
-      "Does the code introduce a factory, interface, generic helper, wrapper, strategy, or configuration layer that has no meaningful current variation, type-safety benefit, boundary, or duplication reduction and materially obscures the behavior?",
-  },
-  useless_indirection: {
-    category: "design",
-    question:
-      "Is there a forwarding layer, wrapper, or helper that adds no validation, policy, transformation, or stable boundary and makes the control flow harder to trace?",
-  },
+ missing_return: {
+  category: "correctness",
+  question:
+   "Is there any function, method, or branch that can complete without returning a value that its contract (its name, its declared type, or the code that calls it) requires — i.e. it falls off the end or yields an unintended/undefined value?",
+ },
+ unhandled_error: {
+  category: "errors",
+  question:
+   "Is there any fallible operation (async call, I/O, parse/de-serialization, index access, division, an external SDK call) whose failure path (throw, error, reject, exception) is never handled and would crash the process or silently produce wrong results?",
+ },
+ bounds_offbyone: {
+  category: "correctness",
+  question:
+   "Does any index, offset, slice, or loop boundary look like it could read or write out of range (off-by-one, empty-collection access, or a boundary that does not match the collection size)?",
+ },
+ resource_leak: {
+  category: "errors",
+  question:
+   "Is any resource (file, connection, lock, subscription, timer, stream, DB transaction) acquired but not released on every control-flow path, including the error path?",
+ },
+ semantic_mismatch: {
+  category: "correctness",
+  question:
+   "Does any piece of logic contradict its own name, an adjacent comment, or the clear expectation of the code that calls it — a sign of a semantic/logic bug rather than a style issue?",
+ },
+ race_concurrency: {
+  category: "correctness",
+  question:
+   "Is there any shared mutable state, or any interleaving of asynchronous/parallel work, that could produce a race, a lost update, or data corruption?",
+ },
+ incomplete_implementation: {
+  category: "completeness",
+  question:
+   "Does executable code contain a stub, placeholder, TODO implementation, hard-coded fake result, empty required handler, or not-implemented path that makes the feature materially incomplete? Ignore TODOs that describe optional future improvements without affecting the current contract.",
+ },
+ unsafe_type_escape: {
+  category: "contracts",
+  question:
+   "Does the code use any, an unchecked cast, a double cast, a non-null assertion, or another type-system escape without a nearby runtime check or invariant that makes the operation safe? Judge semantics, not the mere presence of a cast.",
+ },
+ contract_mismatch: {
+  category: "contracts",
+  question:
+   "Does the implementation violate a declared type, public API, schema, parameter meaning, return contract, or caller-visible behavior, including accepting important input and silently ignoring it?",
+ },
+ unchecked_external_data: {
+  category: "contracts",
+  question:
+   "Is untrusted or external data used as a trusted typed value without validation at the boundary, in a way that could cause incorrect behavior or failure? Return false when the code does not process external data.",
+ },
+ swallowed_error: {
+  category: "errors",
+  question:
+   "Does any catch, callback, or fallback discard a meaningful failure without recovery, propagation, or an intentional documented default, thereby hiding incorrect behavior?",
+ },
+ misleading_success: {
+  category: "errors",
+  question:
+   "Can a failed or partially failed operation be reported to its caller as success, including returning a success value after suppressing an error or completing only part of required state changes?",
+ },
+ injection_risk: {
+  category: "security",
+  question:
+   "Is untrusted input interpolated or concatenated into a shell command, query, HTML, code, or another interpreter sink without appropriate parameterization or escaping? Return false when no such source-to-sink path is present.",
+ },
+ authorization_gap: {
+  category: "security",
+  question:
+   "Does code that performs a protected or user-scoped action lack an authorization check required at this boundary, or confuse authentication with authorization? Return false when this file exposes no protected action or authorization is clearly enforced by its contract.",
+ },
+ secret_exposure: {
+  category: "security",
+  question:
+   "Could this code expose credentials, tokens, personal data, or other sensitive values through source literals, logs, errors, telemetry, or returned output?",
+ },
+ untrusted_path_or_url: {
+  category: "security",
+  question:
+   "Can untrusted input control a filesystem path or outbound URL without confinement or an allowlist, creating path traversal, local-file access, or server-side request forgery risk? Return false when no untrusted path or URL exists.",
+ },
+ speculative_abstraction: {
+  category: "design",
+  question:
+   "Does the code introduce a factory, interface, generic helper, wrapper, strategy, or configuration layer that has no meaningful current variation, type-safety benefit, boundary, or duplication reduction and materially obscures the behavior?",
+ },
+ useless_indirection: {
+  category: "design",
+  question:
+   "Is there a forwarding layer, wrapper, or helper that adds no validation, policy, transformation, or stable boundary and makes the control flow harder to trace?",
+ },
 };
 
 /** Backward-compatible question map retained for existing imports and reports. */
 export const BUG_CHECKS: Record<string, string> = Object.fromEntries(
-  Object.entries(CHECK_DEFINITIONS).map(([name, definition]) => [
-    name,
-    definition.question,
-  ]),
+ Object.entries(CHECK_DEFINITIONS).map(([name, definition]) => [
+  name,
+  definition.question,
+ ]),
 );
 export const BUG_NAMES: string[] = Object.keys(CHECK_DEFINITIONS);
 

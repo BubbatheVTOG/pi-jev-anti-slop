@@ -83,7 +83,11 @@ test("new de-slop checks preserve reports and expose actionable categories", () 
   );
   assert.equal(signal?.category, "completeness");
   assert.equal(signal?.action, "review");
-  assert.ok(report.flags.some((flag) => flag.title.includes("incomplete_implementation")));
+  assert.ok(
+    report.flags.some((flag) =>
+      flag.title.includes("incomplete_implementation"),
+    ),
+  );
   assert.match(renderForLLM(report), /\[completeness\]/);
 });
 
