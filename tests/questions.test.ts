@@ -17,7 +17,12 @@ test("quality reviews use every 0-10 score dimension and no issue checks", () =>
 });
 
 test("targeted review types include only checks from their category", () => {
-  for (const reviewType of ["security", "memory", "performance", "prose"] as const) {
+  for (const reviewType of [
+    "security",
+    "memory",
+    "performance",
+    "prose",
+  ] as const) {
     const built = buildReviewQuestions(reviewType);
     assert.deepEqual(built.dimensionNames, []);
     assert.ok(built.bugNames.length > 0);

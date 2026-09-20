@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import {
-  CHECK_DEFINITIONS,
-  DIMENSIONS,
-} from "../extension/types.ts";
+import { CHECK_DEFINITIONS, DIMENSIONS } from "../extension/types.ts";
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 

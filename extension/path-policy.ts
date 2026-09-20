@@ -79,7 +79,10 @@ export function resolveSafeReviewPath(
       return { ok: false, error: "review target is not a file or directory" };
     }
     if (stat.isFile() && isSensitive(target)) {
-      return { ok: false, error: "refusing to send a potentially sensitive file" };
+      return {
+        ok: false,
+        error: "refusing to send a potentially sensitive file",
+      };
     }
     return { ok: true, path: target };
   } catch (error) {

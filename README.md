@@ -111,7 +111,7 @@ The agent reads back a structured report. Set `reviewType` to the narrowest rele
 /jev status                                     # key presence, review types, and thresholds
 ```
 
-After typing `/jev review `, Pi argument completion lists the available review types: `all`, `quality`, `correctness`, `completeness`, `contracts`, `errors`, `security`, `memory`, `performance`, `prose`, and `design`. A directory review uses common source-code extensions; `prose` directory reviews default to Markdown, MDX, text, reStructuredText, and AsciiDoc. Explicit files may use any non-sensitive text-based source format.
+After typing `/jev review`, Pi argument completion lists the available review types: `all`, `quality`, `correctness`, `completeness`, `contracts`, `errors`, `security`, `memory`, `performance`, `prose`, and `design`. A directory review uses common source-code extensions; `prose` directory reviews default to Markdown, MDX, text, reStructuredText, and AsciiDoc. Explicit files may use any non-sensitive text-based source format.
 
 The original `/jev review <path>` form remains a backward-compatible alias for `/jev review all <path>`. `/jev status` never prints key characters or key length—only `set` or `unset` and the resolved policy numbers.
 

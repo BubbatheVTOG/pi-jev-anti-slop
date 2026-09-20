@@ -24,10 +24,14 @@ test("prose directory reviews default to documentation extensions", () => {
     writeFileSync(join(docs, "notes.rst"), "Notes\n=====\n", "utf8");
     writeFileSync(join(docs, "code.ts"), "export {};\n", "utf8");
 
-    assert.deepEqual(
-      [...normalizeExtensions(undefined, "prose")].sort(),
-      [".adoc", ".asciidoc", ".md", ".mdx", ".rst", ".txt"],
-    );
+    assert.deepEqual([...normalizeExtensions(undefined, "prose")].sort(), [
+      ".adoc",
+      ".asciidoc",
+      ".md",
+      ".mdx",
+      ".rst",
+      ".txt",
+    ]);
     const selection = resolveTargets(root, {
       directory: "docs",
       reviewType: "prose",

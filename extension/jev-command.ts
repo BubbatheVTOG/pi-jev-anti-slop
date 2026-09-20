@@ -10,10 +10,7 @@ import type { JevConfig } from "./config.ts";
 import { composeReport, renderForLLM } from "./compose.ts";
 import { resolveTargets } from "./jev-tool.ts";
 import { runReview } from "./review.ts";
-import {
-  redactLikelySecrets,
-  resolveSafeReviewPath,
-} from "./path-policy.ts";
+import { redactLikelySecrets, resolveSafeReviewPath } from "./path-policy.ts";
 import { REVIEW_TYPES, type ReviewType } from "./types.ts";
 
 /** Human-invoked Jev reviews. Shares review, composition, and target selection with the tool. */
@@ -76,9 +73,7 @@ export function parseReviewArguments(parts: string[]): {
 } {
   const candidate = (parts[1] ?? "").toLowerCase();
   const hasReviewType = REVIEW_TYPE_SET.has(candidate);
-  const hasSecondPositional = Boolean(
-    parts[2] && !parts[2]?.startsWith("--"),
-  );
+  const hasSecondPositional = Boolean(parts[2] && !parts[2]?.startsWith("--"));
   if (!hasReviewType && hasSecondPositional) {
     return {
       reviewType: "all",
@@ -180,10 +175,7 @@ async function runSelectedReviews(
         },
         parsed.reviewType,
       );
-      ctx.ui.notify(
-        renderForLLM(composeReport(raw, cfg, target.file)),
-        "info",
-      );
+      ctx.ui.notify(renderForLLM(composeReport(raw, cfg, target.file)), "info");
     } catch (error) {
       ctx.ui.notify(
         `jev: review failed for ${target.file} — ${error instanceof Error ? error.message : String(error)}`,
@@ -244,7 +236,11 @@ async function handleJevCommand(
     ctx.ui.notify(`jev: missing <file-or-directory>. ${USAGE}`, "warning");
     return;
   }
-  const selection = selectReviewTargets(ctx.cwd, parsed.path, parsed.reviewType);
+  const selection = selectReviewTargets(
+    ctx.cwd,
+    parsed.path,
+    parsed.reviewType,
+  );
   if (selection.selectionError) {
     ctx.ui.notify(`jev: ${selection.selectionError}`, "error");
     return;
@@ -265,6 +261,7 @@ export function registerJevCommand(
     description:
       "TypeSafe Jev review: /jev review <review-type> <file-or-directory>",
     getArgumentCompletions: getJevArgumentCompletions,
-    handler: (args, ctx) => handleJevCommand(args ?? "", ctx, client, getConfig),
+    handler: (args, ctx) =>
+      handleJevCommand(args ?? "", ctx, client, getConfig),
   });
 }

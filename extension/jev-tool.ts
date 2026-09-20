@@ -7,15 +7,8 @@ import { hasKey } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport } from "./compose.ts";
 import { runReview } from "./review.ts";
-import {
-  redactLikelySecrets,
-  resolveSafeReviewPath,
-} from "./path-policy.ts";
-import {
-  REVIEW_TYPES,
-  type ReviewReport,
-  type ReviewType,
-} from "./types.ts";
+import { redactLikelySecrets, resolveSafeReviewPath } from "./path-policy.ts";
+import { REVIEW_TYPES, type ReviewReport, type ReviewType } from "./types.ts";
 
 /**
  * LLM-callable code review. A request can target one file, an explicit group,
@@ -148,7 +141,8 @@ export function normalizeExtensions(
   extensions: string[] | undefined,
   reviewType: ReviewType = "all",
 ): Set<string> {
-  const defaults = reviewType === "prose" ? PROSE_EXTENSIONS : DEFAULT_EXTENSIONS;
+  const defaults =
+    reviewType === "prose" ? PROSE_EXTENSIONS : DEFAULT_EXTENSIONS;
   return new Set(
     (extensions ?? defaults).map((value) => {
       const trimmed = value.trim().toLowerCase();
