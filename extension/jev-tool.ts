@@ -352,7 +352,9 @@ export function resolveSectionTarget(
     return { error: "`sections` can only be combined with a single `path`." };
   }
   if (!params.path) {
-    return { error: "`sections` requires a single `path` to split into sections." };
+    return {
+      error: "`sections` requires a single `path` to split into sections.",
+    };
   }
   const resolved = resolveSafeReviewPath(cwd, params.path, "file");
   if (!resolved.ok) return { error: resolved.error };
@@ -380,11 +382,7 @@ export async function runSectionReviews(
   file: string,
   reviewType: ReviewType = "all",
   note = "",
-  onSection?: (
-    section: SourceSection,
-    index: number,
-    total: number,
-  ) => void,
+  onSection?: (section: SourceSection, index: number, total: number) => void,
 ): Promise<{ results: SectionReviewResult[]; skippedEmpty: number }> {
   const target = readTarget(file);
   if (target.error || !target.code) {
@@ -576,19 +574,27 @@ export function registerJevReviewTool(
                   file,
                   completed: index + 1,
                   total,
-                  section: { start: section.start, end: section.end, heading: section.heading },
+                  section: {
+                    start: section.start,
+                    end: section.end,
+                    heading: section.heading,
+                  },
                 },
               });
             },
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return result(`jev_review: section review failed for ${file}: ${message}`, {
-            ok: false,
-            reason: "section-review",
-            file,
-            error: message,
-          });
+          const message =
+            error instanceof Error ? error.message : String(error);
+          return result(
+            `jev_review: section review failed for ${file}: ${message}`,
+            {
+              ok: false,
+              reason: "section-review",
+              file,
+              error: message,
+            },
+          );
         }
         const failed = outcome.results.filter((section) => !section.ok).length;
         const summary = [

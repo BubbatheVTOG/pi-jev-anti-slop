@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   getJevArgumentCompletions,
   parseReviewArguments,
+  sanitizeReviewNote,
   selectReviewTargets,
 } from "../extension/jev-command.ts";
 
@@ -71,6 +72,19 @@ test("/jev parses typed reviews and preserves the legacy all-review form", () =>
   );
 });
 
+test("/jev redacts credentials from notes before external review", () => {
+  const secret = "sk-1234567890abcdefghijklmnop";
+  const sanitized = sanitizeReviewNote(`investigate token=${secret}`);
+
+  assert.doesNotMatch(sanitized, new RegExp(secret));
+  assert.match(sanitized, /credentials redacted from review note/i);
+  assert.match(sanitized, /token=\[REDACTED\]/);
+  assert.equal(
+    sanitizeReviewNote("focus on error handling"),
+    "focus on error handling",
+  );
+});
+
 test("/jev parses --sections as a standalone flag on typed and legacy forms", () => {
   const typed = parseReviewArguments([
     "review",
@@ -85,7 +99,11 @@ test("/jev parses --sections as a standalone flag on typed and legacy forms", ()
     note: "",
     sections: true,
   });
-  const legacy = parseReviewArguments(["review", "docs/guide.md", "--sections"]);
+  const legacy = parseReviewArguments([
+    "review",
+    "docs/guide.md",
+    "--sections",
+  ]);
   assert.deepEqual(legacy, {
     reviewType: "all",
     path: "docs/guide.md",

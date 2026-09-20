@@ -20,7 +20,8 @@ export default function jevAntiSlop(pi: ExtensionAPI): void {
  // A global disable prevents registration. Invalid settings are handled by the
  // command/tool configuration boundary rather than breaking Pi startup.
  try {
-  if (resolveConfig({ cwd: process.cwd(), projectTrusted: false }).disable) return;
+  if (resolveConfig({ cwd: process.cwd(), projectTrusted: false }).disable)
+   return;
  } catch {
   // Keep the extension registered so invocation can report the configuration error.
  }

@@ -37,6 +37,13 @@ const USAGE =
 type ResolvedSelection = ReturnType<typeof resolveTargets>;
 type ConfigLoader = (cwd: string, projectTrusted: boolean) => JevConfig;
 
+export function sanitizeReviewNote(note: string): string {
+  const sanitized = redactLikelySecrets(note);
+  return sanitized.redacted
+    ? `[credentials redacted from review note] ${sanitized.code}`
+    : sanitized.code;
+}
+
 export function getJevArgumentCompletions(prefix: string): Array<{
   value: string;
   label: string;
@@ -311,8 +318,9 @@ async function handleJevCommand(
     ctx.ui.notify(`jev: missing <file-or-directory>. ${USAGE}`, "warning");
     return;
   }
-  if (parsed.sections) {
-    await runSectionCommand(client, cfg, ctx, parsed);
+  const safeParsed = { ...parsed, note: sanitizeReviewNote(parsed.note) };
+  if (safeParsed.sections) {
+    await runSectionCommand(client, cfg, ctx, safeParsed);
     return;
   }
   const selection = selectReviewTargets(
@@ -328,7 +336,7 @@ async function handleJevCommand(
     ctx.ui.notify("jev: no matching files found.", "warning");
     return;
   }
-  await runSelectedReviews(client, cfg, ctx, parsed, selection);
+  await runSelectedReviews(client, cfg, ctx, safeParsed, selection);
 }
 
 export function registerJevCommand(
