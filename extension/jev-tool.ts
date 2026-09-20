@@ -484,13 +484,6 @@ export function registerJevReviewTool(
 
       const reviewType = resolveReviewType(params.reviewType);
 
-      if (!hasKey()) {
-        return result(
-          "jev_review unavailable: TYPESAFE_API_KEY is not set in this environment. Ask the user to export it, then run /reload.",
-          { ok: false, reason: "no-key" },
-        );
-      }
-
       let cfg: JevConfig;
       try {
         cfg = getConfig(ctx.cwd, ctx.isProjectTrusted());
@@ -500,6 +493,18 @@ export function registerJevReviewTool(
           ok: false,
           reason: "invalid-config",
         });
+      }
+      if (cfg.disable) {
+        return result("jev_review is disabled by configuration.", {
+          ok: false,
+          reason: "disabled",
+        });
+      }
+      if (!hasKey()) {
+        return result(
+          "jev_review unavailable: TYPESAFE_API_KEY is not set in this environment. Export it, then retry.",
+          { ok: false, reason: "no-key" },
+        );
       }
 
       let selection: ReturnType<typeof resolveTargets>;

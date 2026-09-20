@@ -40,13 +40,13 @@ Every check is conditional on relevant material being present. For example, code
 
 ---
 
-## The gate
+## Activation
 
-This extension is **active only when `TYPESAFE_API_KEY` is present in the environment** — the same load-time no-op pattern as the `agent-voice` (binary) and `pi-local-cloud-toggle` (config) extensions, keyed on your env var. When the key is absent, the extension registers **nothing**: no `jev_review` tool, no `/jev` command, no status.
+The extension is active by default, even when `TYPESAFE_API_KEY` is missing or blank. API-key availability controls whether TypeSafe can execute a review; it does not control whether the `jev_review` tool and `/jev` command are registered.
 
-One variable does both jobs: it is the **on/off gate** *and* the SDK's **API key** (the `@typesafe-ai/sdk` reads `TYPESAFE_API_KEY` by default), so the key is never echoed into a request body or a log.
+Set `jev.disable` to `true` in Pi settings to disable the extension explicitly. The `@typesafe-ai/sdk` reads `TYPESAFE_API_KEY` directly, so the key is never echoed into a request body or a log.
 
-> If your key currently lives under a different name (e.g. `JEV_KEY`), rename it to `TYPESAFE_API_KEY`. After setting it, run `/reload` (or start a fresh session) so the extension loads.
+> If your key currently lives under a different name (e.g. `JEV_KEY`), rename it to `TYPESAFE_API_KEY`.
 
 ---
 
@@ -71,7 +71,7 @@ export TYPESAFE_API_KEY="..."   # your TypeSafe key
 pi install /abs/path/to/pi-jev-anti-slop
 ```
 
-Then `/reload`. The `jev_review` tool and `/jev` command appear only while `TYPESAFE_API_KEY` is set.
+Then `/reload`. The `jev_review` tool and `/jev` command remain registered unless `jev.disable` is `true`.
 
 ---
 
@@ -204,6 +204,7 @@ All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `disable` | `false` | Explicitly disable the extension, independent of API-key availability. |
 | `dimensionWeights` | `{readability:1.0, maintainability:1.2, extensibility:0.8, testability:1.2, cleanliness:0.8, reliability:1.2, security_posture:1.2, resource_efficiency:1.0, performance_scalability:1.0, api_contract_clarity:1.0, observability:0.8}` | Relative weight of each dimension in the composite (renormalized to sum 1). |
 | `dimensionFlagBelow` | `0.5` | A dimension scoring below this (0..1) is flagged. |
 | `confidenceFloor` | `0.5` | A *flagged* dimension below this confidence becomes **uncertain** (escalate, don't hard-flag). |
@@ -217,6 +218,7 @@ All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **
 // ~/.pi/agent/settings.json  (or a trusted project's .pi/settings.json)
 {
   "jev": {
+    "disable": false,
     "bugBlockThreshold": 0.8,
     "dimensionWeights": { "testability": 2.0, "cleanliness": 0.5 }
   }

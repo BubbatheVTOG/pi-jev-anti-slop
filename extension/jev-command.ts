@@ -100,6 +100,7 @@ export function parseReviewArguments(parts: string[]): {
 function notifyStatus(ctx: ExtensionCommandContext, cfg: JevConfig): void {
   const lines = [
     "jev status:",
+    `  disabled             ${cfg.disable}`,
     `  TYPESAFE_API_KEY     ${keyMasked()}`,
     `  reviewTypes          ${REVIEW_TYPES.join(", ")}`,
     `  scoreRange           0–10`,
@@ -289,9 +290,13 @@ async function handleJevCommand(
     );
     return;
   }
+  if (cfg.disable) {
+    ctx.ui.notify("jev: disabled by configuration.", "warning");
+    return;
+  }
   if (!hasKey()) {
     ctx.ui.notify(
-      "jev: TYPESAFE_API_KEY is not set. Export it and /reload (or start a fresh session), then retry.",
+      "jev: TYPESAFE_API_KEY is not set. Export it, then retry.",
       "warning",
     );
     return;

@@ -19,6 +19,8 @@ import { join } from "node:path";
  */
 
 export interface JevConfig {
+  /** Disable the Jev extension explicitly, independent of API-key availability. */
+  disable: boolean;
   /** Per-dimension weight in the composite (renormalized to sum 1 in code). */
   dimensionWeights: Record<string, number>;
   /** A quality dimension scoring below this (0..1) is flagged. */
@@ -37,6 +39,7 @@ export interface JevConfig {
 }
 
 export const DEFAULTS: JevConfig = {
+  disable: false,
   dimensionWeights: {
     readability: 1.0,
     maintainability: 1.2,
@@ -61,6 +64,7 @@ export const DEFAULTS: JevConfig = {
 
 // ── I/O-boundary decoders: one per key; unknown in → validated or ignored ────
 
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 const isNum = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 const isUnit = (v: unknown): v is number => isNum(v) && v >= 0 && v <= 1;
@@ -104,6 +108,7 @@ export function resolveConfig(input: {
       : [readBlock(join(input.cwd, ".pi", "settings.json"))]),
   ];
   for (const raw of layers) {
+    if (isBoolean(raw.disable)) config.disable = raw.disable;
     if (isWeightMap(raw.dimensionWeights))
       config.dimensionWeights = {
         ...config.dimensionWeights,

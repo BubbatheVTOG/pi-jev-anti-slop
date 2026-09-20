@@ -1,13 +1,9 @@
 /**
  * pi-jev-anti-slop — a TypeSafe Jev code-review judgment for LLM agent review loops.
  *
- * Gate (mirrors agent-voice / cloud-toggle): if TYPESAFE_API_KEY is not set, this
- * extension registers NOTHING — no tool, no command. That is the "not active when
- * the key is absent" behavior you asked for, keyed on your env var.
- *
- * One variable does both jobs: it is the on/off gate AND the SDK's API key (the
- * SDK reads TYPESAFE_API_KEY from the environment by default), so the key is never
- * echoed into a request or a log.
+ * The extension is enabled by default and can be explicitly disabled with
+ * `jev.disable: true`. API-key availability does not control registration; the SDK
+ * reports credential errors when a review is attempted without a usable key.
  *
  * A reviewer is a *triage* step. Jev returns typed judgments + probabilities
  * (docs.typesafe.ai) — it does not explain or fix. The main LLM reads the flag
@@ -16,14 +12,18 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { hasKey } from "./availability.ts";
 import { resolveConfig } from "./config.ts";
 import { registerJevCommand } from "./jev-command.ts";
 import { registerJevReviewTool } from "./jev-tool.ts";
 
 export default function jevAntiSlop(pi: ExtensionAPI): void {
- // No key → silent no-op; nothing is registered.
- if (!hasKey()) return;
+ // A global disable prevents registration. Invalid settings are handled by the
+ // command/tool configuration boundary rather than breaking Pi startup.
+ try {
+  if (resolveConfig({ cwd: process.cwd(), projectTrusted: false }).disable) return;
+ } catch {
+  // Keep the extension registered so invocation can report the configuration error.
+ }
 
  // One client for the process. No `model` is passed: the SDK uses its default
  // (currently "jev-latest"), so we never hardcode a version that can go stale.
@@ -31,8 +31,7 @@ export default function jevAntiSlop(pi: ExtensionAPI): void {
  try {
   client = new TypeSafeClient();
  } catch {
-  // A malformed key or invalid SDK configuration must not break pi startup.
-  // The extension remains inactive until the environment is corrected and pi reloads.
+  // Invalid SDK configuration must not break Pi startup.
   return;
  }
  const getConfig = (

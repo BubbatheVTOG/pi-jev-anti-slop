@@ -110,6 +110,36 @@ test("non-object Jev configuration fails visibly", () => {
   }
 });
 
+test("explicit disable setting follows trusted configuration precedence", () => {
+  const parent = mkdtempSync(join(tmpdir(), "jev-disable-"));
+  const project = join(parent, "project");
+  const home = join(parent, "home");
+  mkdirSync(join(project, ".pi"), { recursive: true });
+  mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+  writeFileSync(
+    join(home, ".pi", "agent", "settings.json"),
+    JSON.stringify({ jev: { disable: true } }),
+  );
+  writeFileSync(
+    join(project, ".pi", "settings.json"),
+    JSON.stringify({ jev: { disable: false } }),
+  );
+  try {
+    assert.equal(
+      resolveConfig({ cwd: project, homeDir: home, projectTrusted: false })
+        .disable,
+      true,
+    );
+    assert.equal(
+      resolveConfig({ cwd: project, homeDir: home, projectTrusted: true })
+        .disable,
+      false,
+    );
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("invalid configuration values cannot escape policy ranges", () => {
   const parent = mkdtempSync(join(tmpdir(), "jev-config-"));
   const project = join(parent, "project");
