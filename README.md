@@ -4,6 +4,8 @@ A **TypeSafe [Jev](https://docs.typesafe.ai)** code-review **judgment** for LLM-
 
 It scores a file or a diff for **bugs**, **AI-code slop**, and **code quality** (readability, maintainability, extensibility, testability, cleanliness), composes those signals into a **verdict** (`pass` / `review` / `block`) and a **prioritized flag list**, and hands that to the **main LLM to read the code and fix** — then you re-run until it's clean.
 
+![Jev reviewing a TypeScript file and returning quality scores, defect probabilities, and a prioritized work list](docs/images/jev-review.png)
+
 The backward-compatible de-slop battery groups narrow checks into six categories:
 
 - **Correctness:** missing returns, boundary errors, semantic mismatches, and races.
