@@ -30,11 +30,11 @@ export const DIMENSIONS = [
 export type Dimension = (typeof DIMENSIONS)[number];
 
 /**
- * Ordered rubric size for every quality dimension: 0 = worst, 4 = best.
+ * Ordered rubric size for every quality dimension: 0 = worst, 10 = best.
  * `compose.ts` normalizes `score / (SIZE - 1)` into 0..1 (composite-scoring
  * pattern). If the rubric grows, this stays the single knob both sides share.
  */
-export const SCORE_RUBRIC_SIZE = 5;
+export const SCORE_RUBRIC_SIZE = 11;
 export const SCORE_MAX = SCORE_RUBRIC_SIZE - 1;
 
 /**
@@ -54,9 +54,13 @@ export const CHECK_CATEGORIES = [
  "security",
  "memory",
  "performance",
+ "prose",
  "design",
 ] as const;
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
+
+export const REVIEW_TYPES = ["all", "quality", ...CHECK_CATEGORIES] as const;
+export type ReviewType = (typeof REVIEW_TYPES)[number];
 
 export interface CheckDefinition {
  category: CheckCategory;
@@ -195,6 +199,81 @@ export const CHECK_DEFINITIONS: Record<string, CheckDefinition> = {
   question:
    "Does a latency-sensitive path await or execute multiple independent slow operations strictly in sequence even though bounded concurrency or batching would preserve semantics and materially reduce latency? Return false when ordering, rate limits, transactions, resource limits, or dependencies require serialization.",
  },
+ excessive_verbosity: {
+  category: "prose",
+  question:
+   "Is natural-language writing materially longer than needed for its purpose because it over-explains, buries the point, or uses inflated phrasing? Return false when no prose is present or the detail is useful for the intended audience.",
+ },
+ repetition_redundancy: {
+  category: "prose",
+  question:
+   "Does the writing repeat the same claim, transition, warning, or conclusion without adding useful information? Return false when repetition is intentionally used for navigation, safety, or emphasis.",
+ },
+ generic_filler: {
+  category: "prose",
+  question:
+   "Does the writing contain generic filler, empty throat-clearing, vague praise, or stock LLM phrasing that can be removed without losing meaning? Return false when no natural-language prose is present.",
+ },
+ canned_structure: {
+  category: "prose",
+  question:
+   "Does the document use unnecessary headings, formulaic summaries, repetitive conclusion sections, or a canned structure that obscures rather than organizes the material? Return false when the structure genuinely helps readers navigate.",
+ },
+ choppy_or_fragmented_prose: {
+  category: "prose",
+  question:
+   "Is the prose difficult to follow because of sentence fragments, abrupt transitions, monotonous short sentences, or disconnected bullet points? Return false when fragments or bullets are appropriate for the format.",
+ },
+ grammar_error: {
+  category: "prose",
+  question:
+   "Does natural-language text contain a concrete grammatical error involving agreement, tense, sentence structure, modifiers, pronouns, or parallelism? Return false for deliberate dialect, quoted material, identifiers, and code.",
+ },
+ usage_error: {
+  category: "prose",
+  question:
+   "Does the writing misuse a word, idiom, technical term, preposition, article, or commonly confused expression in a way that changes meaning or sounds incorrect? Ignore code tokens and intentional terminology.",
+ },
+ mechanics_error: {
+  category: "prose",
+  question:
+   "Does the writing contain a concrete spelling, punctuation, capitalization, spacing, or formatting mechanics error outside code and literal identifiers? Return false when the convention is intentional and consistent.",
+ },
+ awkward_cadence: {
+  category: "prose",
+  question:
+   "Does the prose have materially awkward rhythm caused by repetitive sentence openings, monotonous sentence length, stacked clauses, or unnatural transitions? Return false when the cadence is clear and appropriate for technical documentation.",
+ },
+ tone_mismatch: {
+  category: "prose",
+  question:
+   "Is the tone inconsistent, unprofessional, patronizing, overly promotional, falsely enthusiastic, or otherwise mismatched to the document's purpose? Return false when tonal variation is intentional and audience-appropriate.",
+ },
+ audience_mismatch: {
+  category: "prose",
+  question:
+   "Does the writing assume unexplained knowledge, define obvious material excessively, or choose detail and vocabulary inappropriate for its stated or evident audience? Return false when the audience cannot be inferred.",
+ },
+ unsupported_claim: {
+  category: "prose",
+  question:
+   "Does the writing make a factual, comparative, performance, security, or compatibility claim that is unsupported by the supplied evidence or contradicted by nearby content? Do not require citations for ordinary instructions or directly observable statements.",
+ },
+ misleading_certainty: {
+  category: "prose",
+  question:
+   "Does the writing present an uncertain, conditional, environment-dependent, or probabilistic statement as universally guaranteed? Return false when qualifications are unnecessary or the guarantee is established by the supplied material.",
+ },
+ fabricated_attribution: {
+  category: "prose",
+  question:
+   "Does the writing appear to invent a quotation, citation, source, benchmark, testimonial, or attribution that is not supported by the supplied material? Return false when no attribution is made or the source is verifiable from the text.",
+ },
+ stale_or_inconsistent_instructions: {
+  category: "prose",
+  question:
+   "Do instructions, examples, commands, names, versions, or cross-references conflict with each other or with the supplied code and configuration, suggesting stale documentation? Return false when no inconsistency is observable in the supplied material.",
+ },
  speculative_abstraction: {
   category: "design",
   question:
@@ -280,7 +359,8 @@ export interface ReviewReport {
  /** Path of the code under review, so the main LLM can read it. */
  target?: string;
  model: string;
- dimensions: Record<Dimension, DimensionAssessment>;
+ /** Only dimensions selected by the review type are present. */
+ dimensions: Partial<Record<Dimension, DimensionAssessment>>;
  bugSignals: BugSignal[];
  composite: {
   score: number;

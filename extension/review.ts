@@ -1,7 +1,7 @@
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { EntryType } from "@typesafe-ai/sdk";
 import { buildReviewQuestions } from "./questions.ts";
-import type { RawJudgments } from "./types.ts";
+import { SCORE_MAX, type RawJudgments, type ReviewType } from "./types.ts";
 
 export class ReviewError extends Error {
  readonly kind: "request" | "response";
@@ -19,8 +19,8 @@ export class ReviewError extends Error {
 
 /**
  * The thin SDK boundary — the ONLY module that touches @typesafe-ai/sdk at
- * runtime. It builds the review questions, sends ONE request over the shared
- * state (all questions run in parallel per docs/cookbooks/parallel_questions),
+ * runtime. It builds the selected review questions, sends ONE request over the
+ * shared state (selected questions run in parallel per the parallel-questions cookbook),
  * and reduces the typed answers to our minimal, reusable RawJudgments shape so
  * that compose.ts stays SDK-free and unit-testable without an API key.
  *
@@ -53,9 +53,13 @@ function normalizeScoreAnswer(
  answer: Extract<RawAnswer, { type: "score" }>,
  name: string,
 ): RawJudgments["scores"][string] {
- if (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > 4) {
+ if (
+  !Number.isFinite(answer.score) ||
+  answer.score < 0 ||
+  answer.score > SCORE_MAX
+ ) {
   throw new Error(
-   `invalid score answer for "${name}": expected a value from 0 to 4`,
+   `invalid score answer for "${name}": expected a value from 0 to ${SCORE_MAX}`,
   );
  }
  const probabilities = Object.fromEntries(
@@ -72,14 +76,15 @@ function normalizeScoreAnswer(
 }
 
 /**
- * Run the review: one TypeSafe call over `state`, all questions in parallel.
+ * Run the review: one TypeSafe call over `state`, selected questions in parallel.
  * Returns the raw, reusable judgments (not a report) — composition is compose.ts.
  */
 export async function runReview(
  client: TypeSafeClient,
  state: EntryType,
+ reviewType: ReviewType = "all",
 ): Promise<RawJudgments> {
- const built = buildReviewQuestions();
+ const built = buildReviewQuestions(reviewType);
  let res: Awaited<ReturnType<TypeSafeClient["systemOne"]>>;
  try {
   res = await client.systemOne({ state, questions: built.questions });

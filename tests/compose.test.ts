@@ -6,6 +6,7 @@ import {
   BUG_NAMES,
   CHECK_DEFINITIONS,
   DIMENSIONS,
+  SCORE_MAX,
 } from "../extension/types.ts";
 import type { RawJudgments } from "../extension/types.ts";
 
@@ -43,7 +44,7 @@ function makeRaw(opts: RawOpts): RawJudgments {
 
 test("clean code → pass, no flags, escalate=false", () => {
   const report = composeReport(
-    makeRaw({ defaultScore: 4, defaultConf: 0.9, bugProb: 0.05 }),
+    makeRaw({ defaultScore: SCORE_MAX, defaultConf: 0.9, bugProb: 0.05 }),
     DEFAULTS,
     "src/a.ts",
   );
@@ -58,7 +59,7 @@ test("clean code → pass, no flags, escalate=false", () => {
 
 test("a block-level bug forces block + escalate even when the dimensions look fine", () => {
   const report = composeReport(
-    makeRaw({ defaultScore: 3.5, defaultConf: 0.9, bugProb: 0.9 }),
+    makeRaw({ defaultScore: 8.75, defaultConf: 0.9, bugProb: 0.9 }),
     DEFAULTS,
     "src/a.ts",
   );
@@ -73,7 +74,7 @@ test("a block-level bug forces block + escalate even when the dimensions look fi
 test("new de-slop checks preserve reports and expose actionable categories", () => {
   const report = composeReport(
     makeRaw({
-      defaultScore: 4,
+      defaultScore: SCORE_MAX,
       defaultConf: 0.9,
       bugProb: 0,
       bugOverride: { incomplete_implementation: 0.7 },
@@ -115,15 +116,15 @@ test("expanded quality metrics participate in scoring and configuration", () => 
 
   const report = composeReport(
     makeRaw({
-      defaultScore: 4,
+      defaultScore: SCORE_MAX,
       defaultConf: 0.9,
       bugProb: 0,
-      override: { security_posture: { score: 1, confidence: 0.9 } },
+      override: { security_posture: { score: 2.5, confidence: 0.9 } },
     }),
     DEFAULTS,
     "src/a.ts",
   );
-  assert.equal(report.dimensions.security_posture.flagged, true);
+  assert.equal(report.dimensions.security_posture?.flagged, true);
   assert.ok(
     report.flags.some(
       (flag) =>
@@ -152,7 +153,7 @@ test("security, memory, and performance checks are independently actionable", ()
 
   const report = composeReport(
     makeRaw({
-      defaultScore: 4,
+      defaultScore: SCORE_MAX,
       defaultConf: 0.9,
       bugProb: 0,
       bugOverride: {
@@ -176,20 +177,38 @@ test("security, memory, and performance checks are independently actionable", ()
   }
 });
 
+test("targeted issue reviews do not invent unrequested dimension scores", () => {
+  const raw: RawJudgments = {
+    scores: {},
+    nouls: { injection_risk: 0.7 },
+    model: "jev-test",
+  };
+  const report = composeReport(raw, DEFAULTS, "src/a.ts");
+  assert.deepEqual(report.dimensions, {});
+  assert.equal(report.composite.tier, "review");
+  assert.ok(
+    report.bugSignals.some(
+      (signal) =>
+        signal.name === "injection_risk" && signal.action === "review",
+    ),
+  );
+  assert.doesNotMatch(renderForLLM(report), /raw .*\/10/);
+});
+
 test("low-confidence failing dimension → uncertainty flag, not a hard dimension flag", () => {
-  // readability: 1.0/4 = 0.25 (< 0.5 flagged) with conf 0.2 (< 0.5 floor) → uncertain.
+  // readability: 2.5/10 = 0.25 (< 0.5 flagged) with conf 0.2 (< 0.5 floor) → uncertain.
   // The other dimensions stay healthy (0.875) so the composite is NOT in block —
   // this isolates the "uncertain dimension escalates to at least review" path.
   const raw = makeRaw({
-    defaultScore: 3.5,
+    defaultScore: 8.75,
     defaultConf: 0.9,
     bugProb: 0.0,
-    override: { readability: { score: 1.0, confidence: 0.2 } },
+    override: { readability: { score: 2.5, confidence: 0.2 } },
   });
   const report = composeReport(raw, DEFAULTS, "src/a.ts");
-  assert.equal(report.dimensions.readability.uncertain, true);
-  assert.equal(report.dimensions.readability.flagged, true);
-  assert.equal(report.dimensions.maintainability.flagged, false);
+  assert.equal(report.dimensions.readability?.uncertain, true);
+  assert.equal(report.dimensions.readability?.flagged, true);
+  assert.equal(report.dimensions.maintainability?.flagged, false);
   // Uncertainty is flagged; a plain dimension flag is NOT emitted for the uncertain dim.
   assert.ok(
     report.flags.some((f) => f.kind === "uncertainty"),
@@ -204,8 +223,8 @@ test("low-confidence failing dimension → uncertainty flag, not a hard dimensio
 });
 
 test("composite policy changes do not escalate without a concrete finding", () => {
-  // All dims 2.5/4 = 0.625 (not flagged; > 0.5), no bugs → composite 0.625.
-  const raw = makeRaw({ defaultScore: 2.5, defaultConf: 0.8, bugProb: 0.0 });
+  // All dims 6.25/10 = 0.625 (not flagged; > 0.5), no bugs → composite 0.625.
+  const raw = makeRaw({ defaultScore: 6.25, defaultConf: 0.8, bugProb: 0.0 });
   const base = composeReport(raw, DEFAULTS, "src/a.ts");
   assert.equal(base.composite.tier, "pass");
   // A stricter aggregate threshold changes the score context, not the verdict:
@@ -219,12 +238,12 @@ test("composite policy changes do not escalate without a concrete finding", () =
 
 test("renderForLLM emits a stable, parseable work list", () => {
   const report = composeReport(
-    makeRaw({ defaultScore: 1, defaultConf: 0.6, bugProb: 0.9 }),
+    makeRaw({ defaultScore: 2.5, defaultConf: 0.6, bugProb: 0.9 }),
     DEFAULTS,
     "src/a.ts",
   );
   const text = renderForLLM(report);
-  assert.match(text, /## Jev code review/);
+  assert.match(text, /## Jev review/);
   assert.ok(text.includes("src/a.ts"));
   assert.match(text, /verdict: BLOCK/);
   assert.match(text, /escalate=true/);

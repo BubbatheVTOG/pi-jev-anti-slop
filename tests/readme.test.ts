@@ -28,3 +28,10 @@ test("README documents filename-plus-chunk divide-and-conquer reviews", () => {
   assert.match(readme, /jev_review\(path: "src\/foo\.ts", code: "<chunk>"\)/);
   assert.match(readme, /cross-chunk boundary/i);
 });
+
+test("README documents the 0-10 scale, typed command, and prose review", () => {
+  assert.match(readme, /0 \(worst\) to 10 \(best\)/);
+  assert.match(readme, /\/jev review <review-type> <file-or-directory>/);
+  assert.match(readme, /\/jev review prose docs/);
+  assert.match(readme, /grammar, usage, mechanics, cadence/i);
+});

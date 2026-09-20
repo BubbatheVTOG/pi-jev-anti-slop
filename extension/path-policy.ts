@@ -60,7 +60,7 @@ export type SafeReviewPath =
 export function resolveSafeReviewPath(
   cwd: string,
   input: string,
-  expected: "file" | "directory",
+  expected: "file" | "directory" | "either",
 ): SafeReviewPath {
   try {
     const root = realpathSync(cwd);
@@ -75,7 +75,10 @@ export function resolveSafeReviewPath(
     if (expected === "directory" && !stat.isDirectory()) {
       return { ok: false, error: "review target is not a directory" };
     }
-    if (expected === "file" && isSensitive(target)) {
+    if (expected === "either" && !stat.isFile() && !stat.isDirectory()) {
+      return { ok: false, error: "review target is not a file or directory" };
+    }
+    if (stat.isFile() && isSensitive(target)) {
       return { ok: false, error: "refusing to send a potentially sensitive file" };
     }
     return { ok: true, path: target };

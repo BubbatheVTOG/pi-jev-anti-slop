@@ -1,6 +1,13 @@
 import { noul, score } from "@typesafe-ai/sdk";
 import type { Questions } from "@typesafe-ai/sdk";
-import { BUG_CHECKS, BUG_NAMES, DIMENSIONS, type Dimension } from "./types.ts";
+import {
+  BUG_CHECKS,
+  BUG_NAMES,
+  CHECK_DEFINITIONS,
+  DIMENSIONS,
+  type Dimension,
+  type ReviewType,
+} from "./types.ts";
 
 /**
  * The Jev review rubric — the ONLY place the judgment wording lives.
@@ -28,87 +35,93 @@ import { BUG_CHECKS, BUG_NAMES, DIMENSIONS, type Dimension } from "./types.ts";
  * type the levels as a min-2 tuple of strings instead. (score() throws at
  * runtime if criteria is not a list of >= 2 entries.)
  */
-type Rubric = readonly [string, string, ...string[]];
+type Rubric = readonly [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
 
-/** 5-level rubric (0 = worst, 4 = best). Levels are concrete, self-contained. */
+function qualityRubric(focus: string, worst: string, best: string): Rubric {
+  return [
+    `0 — ${worst}`,
+    `1 — Very poor ${focus}; pervasive problems make the code unsafe or exceptionally difficult to work with`,
+    `2 — Poor ${focus}; major problems dominate and require substantial correction`,
+    `3 — Weak ${focus}; several serious problems outweigh the limited strengths`,
+    `4 — Below-average ${focus}; important weaknesses remain despite some acceptable elements`,
+    `5 — Mixed ${focus}; meets a basic baseline but has material room for improvement`,
+    `6 — Sound ${focus}; strengths outweigh weaknesses and the remaining issues are manageable`,
+    `7 — Good ${focus}; consistently solid with only a few meaningful shortcomings`,
+    `8 — Very good ${focus}; strong throughout with only minor, localized weaknesses`,
+    `9 — Excellent ${focus}; near-exemplary with negligible room for practical improvement`,
+    `10 — ${best}`,
+  ];
+}
+
+/** 11-level rubric (0 = worst, 10 = best). */
 const LEVELS: Record<Dimension, Rubric> = {
-  readability: [
-    "Dense or un-named; a new reader would struggle to trace the main control flow",
-    "Followable with effort; needs comments or outside knowledge to understand the main path",
-    "Mostly clear for the main path; clear names, but with rough edges or surprises",
-    "Clear; well-named, straightforward control flow a competent reader follows easily",
-    "Exemplary; self-documenting names, obvious flow, no ambiguity, a newcomer reasons about it immediately",
-  ],
-  maintainability: [
-    "Fragile to change; tightly coupled, duplicated, or global-state-laden; a small change risks unrelated breakage",
-    "Hard to change; coupling and duplication make changes risky and scattered across the code",
-    "Changeable with care; mostly cohesive and DRY, but a few tight spots or hidden assumptions",
-    "Maintainable; cohesive, low duplication, clear boundaries; changes are localized and safe",
-    "Highly maintainable; clean seams, isolated concerns, no hidden coupling; changes are trivially localized",
-  ],
-  extensibility: [
-    "Cannot be extended; behavior is hardcoded or entangled; new cases require rewriting existing logic",
-    "Hard to extend; adding a case touches many places or forces changes to core logic",
-    "Extendable only with rework; seams exist but are weak; new cases need non-trivial refactoring",
-    "Extensible; clear extension points (interfaces/strategy/config); new cases are additive",
-    "Designed for extension; explicit, stable extension points; new cases are additive and isolated",
-  ],
-  testability: [
-    "Not testable; monolithic with no seams and heavy side effects; cannot be exercised in isolation",
-    "Hard to test; side effects and global state dominate; needs heavy mocking to test any behavior",
-    "Testable with effort; some seams but substantial mocking and fixture setup required",
-    "Testable; a pure-ish core with injectable dependencies; key behaviors can be exercised in isolation",
-    "Highly testable; small pure functions, clear I/O boundaries, trivial to unit-test the important paths",
-  ],
-  cleanliness: [
-    "Dirt; dead code, magic numbers, inconsistent style, or noise that obscures intent",
-    "Messy; noticeable dead or duplicated code or inconsistent conventions; needs a cleanup pass",
-    "Fair; some leftover cruft or minor inconsistency, but intent is mostly clear",
-    "Clean; consistent, no dead code, sensible naming and structure",
-    "Exemplary; consistent, tidy, no waste, reads as if reviewed and kept tight",
-  ],
-  reliability: [
-    "Brittle; ordinary failures, retries, edge cases, or partial operations can crash, corrupt state, or produce unpredictable results",
-    "Fragile; limited failure handling and weak invariants make common adverse conditions unsafe or inconsistent",
-    "Adequate; common failures and edge cases are handled, but recovery and partial-state behavior have gaps",
-    "Reliable; explicit invariants, predictable failure behavior, and safe recovery cover realistic adverse conditions",
-    "Highly reliable; failure isolation, idempotency where needed, complete recovery paths, and strong invariants make behavior predictably resilient",
-  ],
-  security_posture: [
-    "Insecure; trust boundaries, sensitive operations, or defaults expose clear and severe attack paths",
-    "Weak; important validation, authorization, confidentiality, integrity, or secure-default controls are missing",
-    "Baseline; obvious risks are addressed, but defense in depth or some boundary protections are incomplete",
-    "Secure; trust boundaries are explicit, defaults are safe, sensitive operations are protected, and inputs are constrained",
-    "Defense in depth; least privilege, layered validation, secure defaults, and careful sensitive-data handling leave minimal attack surface",
-  ],
-  resource_efficiency: [
-    "Unbounded or leaking; memory, handles, connections, work queues, or allocations can grow without control",
-    "Wasteful; frequent avoidable allocation, copying, retention, or poor lifecycle management creates significant pressure",
-    "Acceptable; resources are generally released and bounded, with some avoidable materialization or allocation",
-    "Efficient; ownership and cleanup are clear, memory is bounded, and large data uses appropriate streaming, batching, or backpressure",
-    "Highly efficient; resource lifetimes are minimal and explicit, allocations are disciplined, and scaling behavior is predictably bounded",
-  ],
-  performance_scalability: [
-    "Pathological; avoidable blocking or superlinear work makes realistic growth or concurrency impractical",
-    "Poor; hot paths repeat expensive work or serialize independent operations, causing steep latency or throughput degradation",
-    "Adequate; performance is reasonable at expected scale, though some paths will degrade under larger inputs or concurrency",
-    "Scalable; algorithms, batching, concurrency, and I/O choices sustain expected growth without unnecessary hot-path work",
-    "Excellent; complexity and latency are consistently bounded, critical paths are lean, and optimizations match observable workload constraints",
-  ],
-  api_contract_clarity: [
-    "Opaque or contradictory; callers cannot determine valid inputs, outputs, errors, ownership, or compatibility expectations",
-    "Confusing; implicit invariants, inconsistent naming, or surprising behavior make correct integration difficult",
-    "Usable; the main contract is understandable, but edge cases, errors, mutability, or ownership remain partly implicit",
-    "Clear; names, types, validation, errors, and compatibility behavior communicate an unsurprising stable contract",
-    "Exemplary; precise minimal interfaces make valid use obvious, invalid states difficult, and evolution safe for callers",
-  ],
-  observability: [
-    "Opaque; meaningful failures or state transitions are silent, misleading, or impossible to diagnose",
-    "Weak; generic errors or noisy logs omit the context needed to locate and understand operational problems",
-    "Basic; key failures are visible, but correlation, structured context, or health signals are incomplete where needed",
-    "Observable; actionable errors and proportionate structured signals expose important state, latency, and failure transitions without leaking secrets",
-    "Highly diagnosable; carefully scoped logs, metrics, traces, and error context make production behavior easy to explain while preserving privacy",
-  ],
+  readability: qualityRubric(
+    "readability across naming, structure, and control flow",
+    "Dense or un-named; a new reader cannot reliably trace the main control flow",
+    "Exemplary readability; self-documenting names and obvious flow let a newcomer reason about it immediately",
+  ),
+  maintainability: qualityRubric(
+    "maintainability across cohesion, coupling, duplication, and change isolation",
+    "Fragile to change; a small modification risks widespread unrelated breakage",
+    "Exemplary maintainability; clean seams and isolated concerns make changes predictably local",
+  ),
+  extensibility: qualityRubric(
+    "extensibility and the ability to add realistic new cases without rewriting core behavior",
+    "Entangled and hardcoded; realistic new cases require rewriting existing logic",
+    "Exemplary extensibility; stable, justified seams make realistic new cases additive and isolated",
+  ),
+  testability: qualityRubric(
+    "testability across isolation, side-effect boundaries, and practical test seams",
+    "Monolithic and side-effect-heavy; important behavior cannot be exercised in isolation",
+    "Exemplary testability; important behavior is isolated behind clear boundaries and is trivial to verify deterministically",
+  ),
+  cleanliness: qualityRubric(
+    "cleanliness across consistency, dead code, noise, and structural discipline",
+    "Dead code, inconsistency, and noise substantially obscure intent",
+    "Exemplary cleanliness; consistent, disciplined, and free of distracting waste",
+  ),
+  reliability: qualityRubric(
+    "reliability under failures, retries, edge cases, and partial operations",
+    "Brittle; ordinary adverse conditions can crash, corrupt state, or produce unpredictable results",
+    "Exemplary reliability; strong invariants, failure isolation, and complete recovery make behavior predictably resilient",
+  ),
+  security_posture: qualityRubric(
+    "security posture across trust boundaries, defaults, privilege, confidentiality, and integrity",
+    "Insecure boundaries or defaults expose clear and severe attack paths",
+    "Exemplary defense in depth; least privilege and layered controls leave minimal practical attack surface",
+  ),
+  resource_efficiency: qualityRubric(
+    "resource efficiency across memory, allocation, cleanup, streaming, and backpressure",
+    "Unbounded or leaking; memory and other resources can grow without control",
+    "Exemplary resource efficiency; lifetimes and allocations are disciplined and scaling remains predictably bounded",
+  ),
+  performance_scalability: qualityRubric(
+    "performance scalability across complexity, latency, concurrency, batching, and hot-path work",
+    "Pathological blocking or superlinear work makes realistic growth or concurrency impractical",
+    "Exemplary scalability; bounded complexity and lean critical paths sustain realistic growth and concurrency",
+  ),
+  api_contract_clarity: qualityRubric(
+    "API and contract clarity across inputs, outputs, errors, ownership, and compatibility",
+    "Opaque or contradictory; callers cannot determine how to use the interface correctly",
+    "Exemplary contract clarity; precise minimal interfaces make valid use obvious and evolution safe",
+  ),
+  observability: qualityRubric(
+    "observability through actionable errors and proportionate privacy-safe logs, metrics, and traces where relevant",
+    "Opaque; meaningful failures and state transitions are silent, misleading, or impossible to diagnose",
+    "Exemplary observability; production behavior is easy to explain with precise signals that preserve privacy",
+  ),
 };
 
 function dimensionInstructions(dim: Dimension): string {
@@ -130,26 +143,34 @@ export interface ReviewQuestions {
 }
 
 /** Build the review request's question set (shared state, parallel questions). */
-export function buildReviewQuestions(): ReviewQuestions {
+export function buildReviewQuestions(
+  reviewType: ReviewType = "all",
+): ReviewQuestions {
   const questions = {} as Questions;
+  const dimensionNames =
+    reviewType === "all" || reviewType === "quality" ? [...DIMENSIONS] : [];
+  const bugNames = BUG_NAMES.filter(
+    (name) =>
+      reviewType === "all" || CHECK_DEFINITIONS[name]?.category === reviewType,
+  );
 
-  for (const dim of DIMENSIONS) {
+  for (const dim of dimensionNames) {
     questions[dim] = score(dimensionInstructions(dim), LEVELS[dim]);
   }
-  for (const name of BUG_NAMES) {
+  for (const name of bugNames) {
     questions[name] = noul(
-      `Review the supplied code. Answer only about the code as written. ${BUG_CHECKS[name]}`,
+      `Review the supplied material. Answer only about what is present. ${BUG_CHECKS[name]}`,
       {
-        true: "Yes — there is a concrete, plausible instance of this in the code as written.",
+        true: "Yes — there is a concrete, plausible instance of this in the supplied material.",
         false:
-          "No — the code as written does not exhibit this, or the relevant code is not present.",
+          "No — the supplied material does not exhibit this, or the relevant content is not present.",
       },
     );
   }
 
   return {
     questions,
-    dimensionNames: [...DIMENSIONS],
-    bugNames: [...BUG_NAMES],
+    dimensionNames,
+    bugNames,
   };
 }

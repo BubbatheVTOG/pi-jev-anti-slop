@@ -8,7 +8,7 @@ It scores a file, diff, or named code chunk for **bugs**, **AI-code slop**, **se
 
 ## What Jev checks
 
-Each review scores these dimensions from 0 (worst) to 4 (best):
+Each full or `quality` review scores these dimensions from 0 (worst) to 10 (best), then normalizes them to 0–1 for policy and composite scoring:
 
 - `readability` — naming, control flow, and how easily a new reader can reason about the code;
 - `maintainability` — cohesion, coupling, duplication, and change isolation;
@@ -31,9 +31,10 @@ The targeted issue battery asks one independent probability question for every c
 - **Security:** `injection_risk`, `authorization_gap`, `secret_exposure`, `untrusted_path_or_url`, `unsafe_deserialization`, `cryptographic_weakness`, `insecure_transport`.
 - **Memory:** `unbounded_memory_growth`, `retained_reference_leak`, `oversized_materialization`.
 - **Performance:** `algorithmic_complexity`, `repeated_expensive_work`, `blocking_hot_path`, `serial_independent_work`.
+- **Prose:** `excessive_verbosity`, `repetition_redundancy`, `generic_filler`, `canned_structure`, `choppy_or_fragmented_prose`, `grammar_error`, `usage_error`, `mechanics_error`, `awkward_cadence`, `tone_mismatch`, `audience_mismatch`, `unsupported_claim`, `misleading_certainty`, `fabricated_attribution`, `stale_or_inconsistent_instructions`.
 - **Design:** `speculative_abstraction`, `useless_indirection`.
 
-Every check is conditional on relevant code being present. For example, code with no protected action, external URL, cryptographic operation, network transport, large input, or latency-sensitive path should not be flagged for the corresponding issue.
+Every check is conditional on relevant material being present. For example, code with no protected action, external URL, cryptographic operation, network transport, large input, or latency-sensitive path should not be flagged for the corresponding issue. Prose checks inspect documentation and natural-language passages—including comments and docstrings—while ignoring executable code, identifiers, and intentional formatting.
 
 > **Mental model.** Jev is a *triage* step, not a reviewer that writes prose. Per the [TypeSafe docs](https://docs.typesafe.ai), System One models return **typed judgments + probabilities** — never free-text explanations. So a flag is a **signal to look**, not a confirmed defect. The main agent reads the actual code and writes the real fix. That round trip is the review loop this extension serves.
 
@@ -97,27 +98,35 @@ The agent reads back a structured report. Batch results are independent: every r
 
 ### The human command
 
-```
-/jev review src/foo.ts [--lang typescript] [--note "..."]   # run a review, print the report
-/jev status                                                 # show key presence (masked) + current thresholds
+```text
+/jev review all src/foo.ts                      # every score and targeted check
+/jev review quality src/foo.ts                  # 0–10 quality scores only
+/jev review security src                        # security checks across a directory
+/jev review memory src/cache.ts                 # memory checks for one file
+/jev review performance src                     # speed/scalability checks across a directory
+/jev review prose docs                          # writing review for documentation files
+/jev review prose src/parser.ts                 # review comments/docstrings, ignore code
+/jev status                                     # key presence, review types, and thresholds
 ```
 
-`/jev status` never prints any key characters or its length—only `set` or `unset` and the resolved policy numbers.
+After typing `/jev review `, Pi argument completion lists the available review types: `all`, `quality`, `correctness`, `completeness`, `contracts`, `errors`, `security`, `memory`, `performance`, `prose`, and `design`. A directory review uses common source-code extensions; `prose` directory reviews default to Markdown, MDX, text, reStructuredText, and AsciiDoc. Explicit files may use any non-sensitive text-based source format.
+
+The original `/jev review <path>` form remains a backward-compatible alias for `/jev review all <path>`. `/jev status` never prints key characters or key length—only `set` or `unset` and the resolved policy numbers.
 
 ### Example report
 
 ```text
-## Jev code review — src/foo.ts
+## Jev review — src/foo.ts
 verdict: REVIEW   composite health 0.41 / 1.00   escalate=true
 
-Dimensions (0=worst → 1=best, normalized from Jev's 0–4 rubric; conf = Jev confidence):
-  readability      0.62  raw 2.48/4  conf 0.71
-  maintainability  0.38  raw 1.52/4  conf 0.66   <-- FLAGGED
-  extensibility    0.55  raw 2.21/4  conf 0.52
-  testability      0.21  raw 0.84/4  conf 0.73   <-- FLAGGED
-  cleanliness      0.49  raw 1.96/4  conf 0.44   <-- FLAGGED
+Dimensions (0=worst → 1=best, normalized from Jev's 0–10 rubric; conf = Jev confidence):
+  readability              0.62  raw 6.20/10  conf 0.71
+  maintainability          0.38  raw 3.80/10  conf 0.66   <-- FLAGGED
+  extensibility            0.55  raw 5.50/10  conf 0.52
+  testability              0.21  raw 2.10/10  conf 0.73   <-- FLAGGED
+  cleanliness              0.49  raw 4.90/10  conf 0.44   <-- FLAGGED
 
-Bug signals (P(yes) the defect is present; higher = more likely a real bug):
+Issue signals (P(yes) the issue is present; higher = more likely a real finding):
   missing_return     P=0.12  pass
   unhandled_error    P=0.68  review
   bounds_offbyone    P=0.04  pass
@@ -137,7 +146,7 @@ Work list (error → warning → info); read the file and fix these before conti
 
 ## Architecture
 
-```
+```text
 extension/
   index.ts         # factory: the GATE (no key → register nothing) + wiring
   availability.ts  # pure env gate: hasKey() / resolveKey() / keyMasked()  (mirrors agent-voice)
@@ -150,17 +159,22 @@ extension/
   jev-tool.ts      # the LLM-callable `jev_review` tool
   jev-command.ts   # the human `/jev review` / `/jev status` command
 tests/
-  compose.test.ts  # unit tests for the pure composition logic (no SDK / API / I/O)
-  jev-tool.test.ts # filename-plus-chunk selection and safety tests
-  readme.test.ts   # keeps every dimension/check and chunk strategy documented
-  security.test.ts # key-redaction, path-confinement, and config-validation tests
+  compose.test.ts     # pure composition and targeted-review behavior
+  jev-command.test.ts # review-type completion and command parsing
+  jev-tool.test.ts    # filename-plus-chunk selection and safety
+  questions.test.ts   # 0–10 and targeted question selection
+  readme.test.ts      # keeps every dimension/check and strategy documented
+  review.test.ts      # response validation for the 0–10 range
+  security.test.ts    # key-redaction, confinement, and config validation
 ```
 
 **Design choices (each grounded in the live docs):**
 
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
 - **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
-- **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, memory, performance, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
+- **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, memory, performance, prose, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
+- **Targeted review types.** `/jev review <review-type> <file-or-directory>` sends only the score or issue questions relevant to that type. This reduces cost and noise when searching specifically for security, memory, performance, prose, or another category; `all` retains the complete review.
+- **Documentation and prose de-slopping.** The `prose` type checks style, factual support, grammar, usage, mechanics, cadence, tone, audience fit, stale instructions, and common LLM-writing artifacts. It can review documentation files or natural-language comments/docstrings in source without treating executable code as prose.
 - **Efficient divide-and-conquer searches.** `jev_review(path, code)` associates a focused chunk or diff with its real source filename. Agent guidance recommends cohesive overlapping chunks, explicit coverage tracking, full-file verification of findings, and boundary checks so targeted searches save context without pretending that an isolated chunk proves the whole file is clean.
 - **Confidence is a second axis, not a truth value.** A low-confidence *failing* dimension is marked **uncertain** (escalate, don't hard-flag) — [`confidence`](https://docs.typesafe.ai/confidence.md) is distribution concentration, not correctness.
 - **Policy in code, raw judgments reusable.** The verdict and flag list are a pure function of `(raw, config)` (`compose.ts`). The report keeps the raw judgments so policy can change without a second API call.
@@ -214,7 +228,7 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 
 - **A flag is not a proof.** Typed output guarantees the *interface*, not the *truth*. Treat every flag as a hypothesis to verify in the code.
 - **Jev accepts text only** (no images/audio/video). Its primary language is English; other languages work but with lower accuracy.
-- **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large whole-file reviews are truncated (see `MAX_CODE_CHARS`). Use `path` plus `code` for a named chunk and a divide-and-conquer search, but remember that isolated chunks can miss cross-boundary control flow, shared state, and interactions with code outside the chunk.
+- **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large whole-file reviews are truncated (see `MAX_CODE_CHARS`). Use `path` plus `code` for a named chunk and a divide-and-conquer search, but remember that isolated chunks can miss cross-boundary control flow, shared state, and interactions with code outside the chunk. Prose accuracy checks can identify unsupported, contradictory, stale, or overconfident claims in the supplied context; they cannot independently fact-check information that is absent from that context.
 - **It does not explain or fix.** Wording in flags is authored by this extension from the judgment text; the explanation and the fix come from the main LLM (or you).
 - **Cost/latency.** One `systemOne` call is made per file or supplied chunk. A directory or group review therefore costs one request per discovered file, while divide-and-conquer review costs one request per chunk; `maxFiles` defaults to 200 for directory scans. Measure your real budget and choose chunk sizes that reduce context without creating excessive calls.
 

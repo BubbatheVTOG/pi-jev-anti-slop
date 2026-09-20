@@ -48,53 +48,65 @@ export function composeReport(
   //    A low score is "flagged"; a flagged score WITH low confidence is "uncertain"
   //    (escalate, do not hard-flag) — confidence is distribution concentration, not
   //    correctness (docs/confidence).
-  const dimensions = {} as Record<Dimension, DimensionAssessment>;
+  const dimensions: Partial<Record<Dimension, DimensionAssessment>> = {};
   for (const dim of DIMENSIONS) {
     const a = raw.scores[dim];
-    const normalized = a ? clamp01(a.score / SCORE_MAX) : 0;
-    const confidence = a ? a.confidence : 0;
+    if (!a) continue;
+    const normalized = clamp01(a.score / SCORE_MAX);
+    const confidence = a.confidence;
     const flagged = normalized < cfg.dimensionFlagBelow;
     const uncertain = flagged && confidence < cfg.confidenceFloor;
     dimensions[dim] = {
       dimension: dim,
-      raw: a?.score ?? 0,
+      raw: a.score,
       max: SCORE_MAX,
       normalized,
       confidence,
-      probabilities: a?.probabilities ?? {},
+      probabilities: a.probabilities,
       flagged,
       uncertain,
     };
   }
 
   // 2) Bug signals: threshold each independent noul (guardrails "battery" pattern).
-  const bugSignals: BugSignal[] = Object.entries(CHECK_DEFINITIONS).map(
+  const bugSignals: BugSignal[] = Object.entries(CHECK_DEFINITIONS).flatMap(
     ([name, definition]) => {
+      if (!Object.hasOwn(raw.nouls, name)) return [];
       const probability = raw.nouls[name] ?? 0;
       let action: Tier = "pass";
       if (probability >= cfg.bugBlockThreshold) action = "block";
       else if (probability >= cfg.bugReviewThreshold) action = "review";
-      return {
-        name,
-        category: definition.category,
-        description: definition.question,
-        probability,
-        action,
-        flagged: action !== "pass",
-      };
+      return [
+        {
+          name,
+          category: definition.category,
+          description: definition.question,
+          probability,
+          action,
+          flagged: action !== "pass",
+        },
+      ];
     },
   );
 
   // 3) Composite health (0..1, higher = healthier): weighted quality minus a
   //    penalty scaled by the worst bug probability. Weights are renormalized in
   //    code so they sum to 1.
+  const scoredDimensions = DIMENSIONS.filter(
+    (dimension) => dimensions[dimension] !== undefined,
+  );
   const weightSum =
-    DIMENSIONS.reduce((s, d) => s + positive(cfg.dimensionWeights[d]), 0) || 1;
-  let quality = 0;
-  for (const dim of DIMENSIONS) {
+    scoredDimensions.reduce(
+      (sum, dimension) => sum + positive(cfg.dimensionWeights[dimension]),
+      0,
+    ) || 1;
+  let quality = scoredDimensions.length === 0 ? 1 : 0;
+  for (const dimension of scoredDimensions) {
+    const assessment = dimensions[dimension];
+    if (!assessment) continue;
     quality +=
-      (positive(cfg.dimensionWeights[dim]) / weightSum) *
-      dimensions[dim].normalized;
+      (positive(cfg.dimensionWeights[dimension]) / weightSum) *
+      assessment.normalized;
   }
   const worstBug = bugSignals.reduce((m, b) => Math.max(m, b.probability), 0);
   const bugPenalty =
@@ -141,6 +153,7 @@ export function composeReport(
   }
   for (const dim of DIMENSIONS) {
     const d = dimensions[dim];
+    if (!d) continue;
     if (d.uncertain) {
       flags.push({
         severity: "warning",
@@ -207,39 +220,51 @@ export function composeReport(
  */
 export function renderForLLM(r: ReviewReport): string {
   const lines: string[] = [];
-  lines.push(`## Jev code review — ${r.target ?? "<inline code>"}`);
+  lines.push(`## Jev review — ${r.target ?? "<inline material>"}`);
   lines.push(
     `verdict: ${r.composite.tier.toUpperCase()}   ` +
       `composite health ${r.composite.score.toFixed(2)} / 1.00 ` +
       `(context=${r.composite.contextTier ?? "pass"})   escalate=${r.escalate}`,
   );
   lines.push("");
-  lines.push(
-    `Dimensions (0=worst → 1=best, normalized from Jev's 0–4 rubric; conf = Jev confidence):`,
+  const scoredDimensions = DIMENSIONS.filter(
+    (dimension) => r.dimensions[dimension] !== undefined,
   );
-  for (const dim of DIMENSIONS) {
-    const d = r.dimensions[dim];
-    const marks: string[] = [];
-    if (d.uncertain) marks.push("LOW-CONF");
-    if (d.flagged) marks.push("FLAGGED");
-    const mark = marks.length ? `   <-- ${marks.join(", ")}` : "";
+  if (scoredDimensions.length === 0) {
+    lines.push("Dimensions: not requested for this review type.");
+  } else {
     lines.push(
-      `  ${dim.padEnd(24)} ${d.normalized.toFixed(2).padStart(5)}  ` +
-        `raw ${d.raw.toFixed(2)}/4  conf ${d.confidence.toFixed(2)}${mark}`,
+      `Dimensions (0=worst → 1=best, normalized from Jev's 0–${SCORE_MAX} rubric; conf = Jev confidence):`,
     );
+    for (const dim of scoredDimensions) {
+      const d = r.dimensions[dim];
+      if (!d) continue;
+      const marks: string[] = [];
+      if (d.uncertain) marks.push("LOW-CONF");
+      if (d.flagged) marks.push("FLAGGED");
+      const mark = marks.length ? `   <-- ${marks.join(", ")}` : "";
+      lines.push(
+        `  ${dim.padEnd(24)} ${d.normalized.toFixed(2).padStart(5)}  ` +
+          `raw ${d.raw.toFixed(2)}/${SCORE_MAX}  conf ${d.confidence.toFixed(2)}${mark}`,
+      );
+    }
   }
   lines.push("");
-  lines.push(
-    `Bug signals (P(yes) the defect is present; higher = more likely a real bug):`,
-  );
-  for (const b of r.bugSignals) {
-    let tag = "pass";
-    if (b.action === "block") tag = "FIX";
-    else if (b.action === "review") tag = "review";
+  if (r.bugSignals.length === 0) {
+    lines.push("Issue signals: not requested for this review type.");
+  } else {
     lines.push(
-      `  ${b.name.padEnd(26)} [${b.category ?? "uncategorized"}] ` +
-        `P=${b.probability.toFixed(2)}  ${tag}`,
+      `Issue signals (P(yes) the issue is present; higher = more likely a real finding):`,
     );
+    for (const b of r.bugSignals) {
+      let tag = "pass";
+      if (b.action === "block") tag = "FIX";
+      else if (b.action === "review") tag = "review";
+      lines.push(
+        `  ${b.name.padEnd(32)} [${b.category ?? "uncategorized"}] ` +
+          `P=${b.probability.toFixed(2)}  ${tag}`,
+      );
+    }
   }
   lines.push("");
   if (r.flags.length > 0) {
@@ -260,7 +285,7 @@ export function renderForLLM(r: ReviewReport): string {
   lines.push("");
   lines.push(
     `NOTE: Jev returns judgments + probabilities, not explanations. A flag is a signal ` +
-      `to look, not a confirmed defect. Verify each item in the code before changing it.`,
+      `to investigate, not a confirmed defect. Verify each item in the supplied material before changing it.`,
   );
   return lines.join("\n");
 }

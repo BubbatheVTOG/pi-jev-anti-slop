@@ -41,6 +41,7 @@ test("review paths stay inside the project and reject sensitive files", () => {
   const parent = mkdtempSync(join(tmpdir(), "jev-path-"));
   const root = join(parent, "project");
   mkdirSync(root);
+  mkdirSync(join(root, "docs"));
   writeFileSync(join(root, "safe.ts"), "export const safe = true;\n");
   writeFileSync(join(root, ".env"), "SECRET=value\n");
   writeFileSync(join(parent, "outside.ts"), "export const outside = true;\n");
@@ -50,7 +51,15 @@ test("review paths stay inside the project and reject sensitive files", () => {
       ok: true,
       path: join(root, "safe.ts"),
     });
-    const sensitive = resolveSafeReviewPath(root, ".env", "file");
+    assert.deepEqual(resolveSafeReviewPath(root, "docs", "either"), {
+      ok: true,
+      path: join(root, "docs"),
+    });
+    assert.deepEqual(resolveSafeReviewPath(root, "safe.ts", "either"), {
+      ok: true,
+      path: join(root, "safe.ts"),
+    });
+    const sensitive = resolveSafeReviewPath(root, ".env", "either");
     assert.equal(sensitive.ok, false);
     if (!sensitive.ok) assert.match(sensitive.error, /sensitive/);
     const parentEscape = resolveSafeReviewPath(root, "../outside.ts", "file");
