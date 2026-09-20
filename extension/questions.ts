@@ -67,15 +67,58 @@ const LEVELS: Record<Dimension, Rubric> = {
     "Clean; consistent, no dead code, sensible naming and structure",
     "Exemplary; consistent, tidy, no waste, reads as if reviewed and kept tight",
   ],
+  reliability: [
+    "Brittle; ordinary failures, retries, edge cases, or partial operations can crash, corrupt state, or produce unpredictable results",
+    "Fragile; limited failure handling and weak invariants make common adverse conditions unsafe or inconsistent",
+    "Adequate; common failures and edge cases are handled, but recovery and partial-state behavior have gaps",
+    "Reliable; explicit invariants, predictable failure behavior, and safe recovery cover realistic adverse conditions",
+    "Highly reliable; failure isolation, idempotency where needed, complete recovery paths, and strong invariants make behavior predictably resilient",
+  ],
+  security_posture: [
+    "Insecure; trust boundaries, sensitive operations, or defaults expose clear and severe attack paths",
+    "Weak; important validation, authorization, confidentiality, integrity, or secure-default controls are missing",
+    "Baseline; obvious risks are addressed, but defense in depth or some boundary protections are incomplete",
+    "Secure; trust boundaries are explicit, defaults are safe, sensitive operations are protected, and inputs are constrained",
+    "Defense in depth; least privilege, layered validation, secure defaults, and careful sensitive-data handling leave minimal attack surface",
+  ],
+  resource_efficiency: [
+    "Unbounded or leaking; memory, handles, connections, work queues, or allocations can grow without control",
+    "Wasteful; frequent avoidable allocation, copying, retention, or poor lifecycle management creates significant pressure",
+    "Acceptable; resources are generally released and bounded, with some avoidable materialization or allocation",
+    "Efficient; ownership and cleanup are clear, memory is bounded, and large data uses appropriate streaming, batching, or backpressure",
+    "Highly efficient; resource lifetimes are minimal and explicit, allocations are disciplined, and scaling behavior is predictably bounded",
+  ],
+  performance_scalability: [
+    "Pathological; avoidable blocking or superlinear work makes realistic growth or concurrency impractical",
+    "Poor; hot paths repeat expensive work or serialize independent operations, causing steep latency or throughput degradation",
+    "Adequate; performance is reasonable at expected scale, though some paths will degrade under larger inputs or concurrency",
+    "Scalable; algorithms, batching, concurrency, and I/O choices sustain expected growth without unnecessary hot-path work",
+    "Excellent; complexity and latency are consistently bounded, critical paths are lean, and optimizations match observable workload constraints",
+  ],
+  api_contract_clarity: [
+    "Opaque or contradictory; callers cannot determine valid inputs, outputs, errors, ownership, or compatibility expectations",
+    "Confusing; implicit invariants, inconsistent naming, or surprising behavior make correct integration difficult",
+    "Usable; the main contract is understandable, but edge cases, errors, mutability, or ownership remain partly implicit",
+    "Clear; names, types, validation, errors, and compatibility behavior communicate an unsurprising stable contract",
+    "Exemplary; precise minimal interfaces make valid use obvious, invalid states difficult, and evolution safe for callers",
+  ],
+  observability: [
+    "Opaque; meaningful failures or state transitions are silent, misleading, or impossible to diagnose",
+    "Weak; generic errors or noisy logs omit the context needed to locate and understand operational problems",
+    "Basic; key failures are visible, but correlation, structured context, or health signals are incomplete where needed",
+    "Observable; actionable errors and proportionate structured signals expose important state, latency, and failure transitions without leaking secrets",
+    "Highly diagnosable; carefully scoped logs, metrics, traces, and error context make production behavior easy to explain while preserving privacy",
+  ],
 };
 
 function dimensionInstructions(dim: Dimension): string {
   return (
     `Review the supplied code for ${dim}. Judge ONLY the code as written — do not ` +
     `infer or assume code that is not present. Score it on the ${dim} rubric using ` +
-    `concrete, observable properties of the code (naming, control flow, coupling, ` +
-    `duplication, extension seams, side effects, dead code, waste). Do not invent ` +
-    `problems that are not actually there.`
+    `concrete, observable properties of the code and the dimension-specific rubric. ` +
+    `Evaluate controls only where that concern is relevant to the supplied code; do ` +
+    `not penalize a pure or bounded helper for lacking unrelated infrastructure. Do ` +
+    `not invent problems that are not actually there.`
   );
 }
 

@@ -15,8 +15,9 @@ import type { ReviewReport } from "./types.ts";
 
 /**
  * LLM-callable code review. A request can target one file, an explicit group,
- * or a directory. Every discovered file gets its own independent Jev request
- * and its result retains the exact normalized file path.
+ * a directory, anonymous inline code, or a supplied chunk attributed to an
+ * existing source path. Every target gets its own independent Jev request and
+ * its result retains the exact normalized file path when one is available.
  */
 
 const MAX_CODE_CHARS = 200_000;
@@ -58,7 +59,7 @@ const PARAMS = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "One cwd-relative file path, or an absolute path inside the current project root. Use `paths` for an explicit group or `directory` for a codebase scan. Cannot be combined with inline `code`.",
+        "One cwd-relative file path, or an absolute path inside the current project root. Use alone to review the whole file, or combine with `code` to attribute a supplied chunk/diff to this file. Use `paths` for an explicit group or `directory` for a codebase scan.",
     }),
   ),
   paths: Type.Optional(
@@ -93,7 +94,7 @@ const PARAMS = Type.Object({
   code: Type.Optional(
     Type.String({
       description:
-        "Inline code or a diff/hunk for one review. Cannot be combined with path, paths, or directory.",
+        "Inline code, a diff, or a cohesive chunk for one review. Combine with `path` to preserve its source filename; without `path`, the target is reported as <inline>. Cannot be combined with `paths` or `directory`.",
     }),
   ),
   language: Type.Optional(
@@ -109,7 +110,12 @@ const PARAMS = Type.Object({
   ),
 });
 
-type ReviewTarget = { file: string; code: string; error?: string };
+type ReviewTarget = {
+  file: string;
+  code: string;
+  error?: string;
+  suppliedChunk?: boolean;
+};
 type FileResult =
   | {
       file: string;
@@ -183,7 +189,7 @@ function readTarget(file: string): ReviewTarget {
   }
 }
 
-function resolveTargets(
+export function resolveTargets(
   cwd: string,
   params: {
     path?: string;
@@ -198,15 +204,32 @@ function resolveTargets(
   selectionError?: string;
   scanTruncated?: boolean;
 } {
-  if (typeof params.code === "string" && params.code.trim() !== "") {
-    if (params.path || params.paths?.length || params.directory) {
+  if (typeof params.code === "string") {
+    if (params.code.trim() === "") {
+      return { targets: [], selectionError: "`code` must not be empty." };
+    }
+    if (params.paths?.length || params.directory) {
       return {
         targets: [],
-        selectionError:
-          "`code` cannot be combined with path, paths, or directory.",
+        selectionError: "`code` cannot be combined with paths or directory.",
       };
     }
-    return { targets: [{ file: "<inline>", code: params.code }] };
+    if (!params.path) {
+      return { targets: [{ file: "<inline>", code: params.code }] };
+    }
+    const resolved = resolveSafeReviewPath(cwd, params.path, "file");
+    if (!resolved.ok) {
+      return { targets: [], selectionError: resolved.error };
+    }
+    return {
+      targets: [
+        {
+          file: resolved.path,
+          code: params.code,
+          suppliedChunk: true,
+        },
+      ],
+    };
   }
 
   let requested: string[] = [];
@@ -279,13 +302,14 @@ export function registerJevReviewTool(
     name: "jev_review",
     label: "Jev code review",
     description:
-      "Run independent TypeSafe Jev reviews on one file, an explicit group of files, or a whole codebase directory. " +
-      "Use `path` for one file, `paths` for exact files, or `directory` for a recursive scan. Targets must remain inside the current project and sensitive credential files are rejected. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
+      "Run independent TypeSafe Jev reviews on one file, an explicit group of files, a whole codebase directory, or a named chunk from a file. " +
+      "Use `path` for one file, `paths` for exact files, `directory` for a recursive scan, or combine `path` with `code` to review a supplied chunk/diff while preserving its filename. Targets must remain inside the current project and sensitive credential files are rejected. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
       "This is a signal to investigate, not proof: verify each item in the code before changing it.",
     promptSnippet:
-      "Run jev_review per file after writing code; use paths for a group or directory for a codebase, then fix flags keyed by exact file path and re-run.",
+      "Run jev_review per file after writing code. For focused divide-and-conquer searches, pass a filename in `path` with a cohesive chunk in `code`, investigate its flags in context, and continue through the remaining chunks.",
     promptGuidelines: [
-      "Use `path` for one file, `paths` for an explicit group, or `directory` to review a whole codebase recursively.",
+      "Use `path` for one whole file, `paths` for an explicit group, or `directory` to review a whole codebase recursively.",
+      "For a large file or a targeted bug search, divide it into cohesive, preferably overlapping chunks and call `jev_review` with the same `path` plus each chunk in `code`. Track coverage, investigate each flag against the full file, and do not claim the file is clean until all relevant chunks and their boundaries have been checked.",
       "Treat every returned file independently: use the exact `file` field to read and fix only that file, then re-run Jev for the changed files.",
       "A batch contains one TypeSafe request per file; do not treat a composite-only verdict as proof of a defect.",
     ],
@@ -364,10 +388,13 @@ export function registerJevReviewTool(
           note = `[credentials redacted before review] ${note}`;
         }
         try {
+          const scope = target.suppliedChunk
+            ? `chunk review: judge only the supplied chunk from ${file}; inspect surrounding code before acting on a flag; `
+            : `per-file review: judge only ${file}; `;
           const raw = await runReview(client, {
             path: file,
             language: params.language ?? (extname(file).slice(1) || "unknown"),
-            note: `per-file review: judge only ${file}; ${note}`,
+            note: `${scope}${note}`,
             code,
           });
           results.push({

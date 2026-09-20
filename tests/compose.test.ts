@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { composeReport, renderForLLM } from "../extension/compose.ts";
 import { DEFAULTS } from "../extension/config.ts";
-import { BUG_NAMES, DIMENSIONS } from "../extension/types.ts";
+import {
+  BUG_NAMES,
+  CHECK_DEFINITIONS,
+  DIMENSIONS,
+} from "../extension/types.ts";
 import type { RawJudgments } from "../extension/types.ts";
 
 /**
@@ -91,9 +95,90 @@ test("new de-slop checks preserve reports and expose actionable categories", () 
   assert.match(renderForLLM(report), /\[completeness\]/);
 });
 
+test("expanded quality metrics participate in scoring and configuration", () => {
+  const addedDimensions = [
+    "reliability",
+    "security_posture",
+    "resource_efficiency",
+    "performance_scalability",
+    "api_contract_clarity",
+    "observability",
+  ] as const;
+
+  for (const dimension of addedDimensions) {
+    assert.ok(DIMENSIONS.includes(dimension));
+    assert.ok(
+      (DEFAULTS.dimensionWeights[dimension] ?? 0) > 0,
+      `expected a positive default weight for ${dimension}`,
+    );
+  }
+
+  const report = composeReport(
+    makeRaw({
+      defaultScore: 4,
+      defaultConf: 0.9,
+      bugProb: 0,
+      override: { security_posture: { score: 1, confidence: 0.9 } },
+    }),
+    DEFAULTS,
+    "src/a.ts",
+  );
+  assert.equal(report.dimensions.security_posture.flagged, true);
+  assert.ok(
+    report.flags.some(
+      (flag) =>
+        flag.kind === "dimension" && flag.title.includes("security_posture"),
+    ),
+  );
+});
+
+test("security, memory, and performance checks are independently actionable", () => {
+  const expectedCategories = {
+    unsafe_deserialization: "security",
+    cryptographic_weakness: "security",
+    insecure_transport: "security",
+    unbounded_memory_growth: "memory",
+    retained_reference_leak: "memory",
+    oversized_materialization: "memory",
+    algorithmic_complexity: "performance",
+    repeated_expensive_work: "performance",
+    blocking_hot_path: "performance",
+    serial_independent_work: "performance",
+  } as const;
+
+  for (const [name, category] of Object.entries(expectedCategories)) {
+    assert.equal(CHECK_DEFINITIONS[name]?.category, category);
+  }
+
+  const report = composeReport(
+    makeRaw({
+      defaultScore: 4,
+      defaultConf: 0.9,
+      bugProb: 0,
+      bugOverride: {
+        unsafe_deserialization: 0.7,
+        unbounded_memory_growth: 0.7,
+        algorithmic_complexity: 0.7,
+      },
+    }),
+    DEFAULTS,
+    "src/a.ts",
+  );
+  assert.equal(report.composite.tier, "review");
+  for (const category of ["security", "memory", "performance"] as const) {
+    assert.ok(
+      report.bugSignals.some(
+        (signal) => signal.category === category && signal.action === "review",
+      ),
+      `expected an actionable ${category} signal`,
+    );
+    assert.ok(renderForLLM(report).includes(`[${category}]`));
+  }
+});
+
 test("low-confidence failing dimension → uncertainty flag, not a hard dimension flag", () => {
   // readability: 1.0/4 = 0.25 (< 0.5 flagged) with conf 0.2 (< 0.5 floor) → uncertain.
-  // The other four dims stay healthy (0.875) so the composite is NOT in block —
+  // The other dimensions stay healthy (0.875) so the composite is NOT in block —
   // this isolates the "uncertain dimension escalates to at least review" path.
   const raw = makeRaw({
     defaultScore: 3.5,

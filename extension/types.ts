@@ -20,6 +20,12 @@ export const DIMENSIONS = [
  "extensibility",
  "testability",
  "cleanliness",
+ "reliability",
+ "security_posture",
+ "resource_efficiency",
+ "performance_scalability",
+ "api_contract_clarity",
+ "observability",
 ] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
@@ -36,9 +42,9 @@ export const SCORE_MAX = SCORE_RUBRIC_SIZE - 1;
  * guardrails "battery" pattern). The string is the exact wording asked of the
  * model AND shown in a flag, so the main LLM knows precisely what to look for.
  *
- * Deliberately small: the docs warn against over-enumerating, and these are the
- * classes most likely to appear in generated code. Each is an independent
- * judgment (one per label, per the primitives guidance).
+ * Deliberately targeted: the docs warn against vague or overlapping checks, so
+ * every class below names one independently actionable failure mode and includes
+ * a relevance guard where the issue requires a particular kind of code.
  */
 export const CHECK_CATEGORIES = [
  "correctness",
@@ -46,6 +52,8 @@ export const CHECK_CATEGORIES = [
  "contracts",
  "errors",
  "security",
+ "memory",
+ "performance",
  "design",
 ] as const;
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
@@ -136,6 +144,56 @@ export const CHECK_DEFINITIONS: Record<string, CheckDefinition> = {
   category: "security",
   question:
    "Can untrusted input control a filesystem path or outbound URL without confinement or an allowlist, creating path traversal, local-file access, or server-side request forgery risk? Return false when no untrusted path or URL exists.",
+ },
+ unsafe_deserialization: {
+  category: "security",
+  question:
+   "Does the code deserialize, hydrate, evaluate, or reconstruct attacker-controlled data into executable code, privileged objects, or dangerous runtime types without a strict schema and safe format? Return false when deserialization is data-only, validated, or absent.",
+ },
+ cryptographic_weakness: {
+  category: "security",
+  question:
+   "Does security-sensitive code use broken cryptography, a hard-coded key or nonce, predictable randomness, insecure password hashing, nonce or IV reuse, or encryption without required authentication? Return false when the code performs no security-sensitive cryptographic operation.",
+ },
+ insecure_transport: {
+  category: "security",
+  question:
+   "Does network code transmit sensitive data over plaintext, disable certificate or hostname verification, trust every certificate, or otherwise weaken transport security? Return false when there is no network transport or secure verification is preserved.",
+ },
+ unbounded_memory_growth: {
+  category: "memory",
+  question:
+   "Can a collection, cache, queue, buffer, registry, retry history, or accumulated result grow without a bound, eviction policy, backpressure, or lifecycle reset as input or runtime duration increases? Return false when growth is strictly bounded or the data is promptly released.",
+ },
+ retained_reference_leak: {
+  category: "memory",
+  question:
+   "Can listeners, subscriptions, closures, global registries, caches, timers, or callbacks retain objects beyond their intended lifetime because references are not removed or ownership never ends? Return false when teardown clearly releases the references or no long-lived owner exists.",
+ },
+ oversized_materialization: {
+  category: "memory",
+  question:
+   "Does the code materialize an entire potentially large or attacker-controlled file, stream, query result, request body, or transformed copy in memory when it should impose a limit, paginate, chunk, or stream? Return false when the input is demonstrably small or bounded.",
+ },
+ algorithmic_complexity: {
+  category: "performance",
+  question:
+   "Does code on a growing or attacker-controlled input use an avoidable quadratic-or-worse algorithm, such as nested full scans, repeated linear membership checks, or pathological recursion, where a straightforward indexed or linear approach exists? Return false for small bounded inputs or work outside a meaningful path.",
+ },
+ repeated_expensive_work: {
+  category: "performance",
+  question:
+   "Does a loop or frequently called path unnecessarily repeat invariant parsing, compilation, serialization, allocation, database access, network I/O, or another expensive operation that can safely be performed once or reused? Return false when repetition is required for correctness or the operation is cheap.",
+ },
+ blocking_hot_path: {
+  category: "performance",
+  question:
+   "Does latency-sensitive, request-handling, event-loop, UI, or asynchronous code perform blocking I/O, unbounded CPU work, or synchronous waiting that can stall unrelated work? Return false when the path is not latency-sensitive or the work is explicitly isolated from shared execution.",
+ },
+ serial_independent_work: {
+  category: "performance",
+  question:
+   "Does a latency-sensitive path await or execute multiple independent slow operations strictly in sequence even though bounded concurrency or batching would preserve semantics and materially reduce latency? Return false when ordering, rate limits, transactions, resource limits, or dependencies require serialization.",
  },
  speculative_abstraction: {
   category: "design",

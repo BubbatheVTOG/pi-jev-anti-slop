@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import {
+  CHECK_DEFINITIONS,
+  DIMENSIONS,
+} from "../extension/types.ts";
+
+const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+
+test("README lists every scored dimension and targeted issue check", () => {
+  for (const dimension of DIMENSIONS) {
+    assert.ok(
+      readme.includes(`\`${dimension}\``),
+      `README is missing dimension ${dimension}`,
+    );
+  }
+  for (const check of Object.keys(CHECK_DEFINITIONS)) {
+    assert.ok(
+      readme.includes(`\`${check}\``),
+      `README is missing check ${check}`,
+    );
+  }
+});
+
+test("README documents filename-plus-chunk divide-and-conquer reviews", () => {
+  assert.match(readme, /divide-and-conquer search strategy/i);
+  assert.match(readme, /jev_review\(path: "src\/foo\.ts", code: "<chunk>"\)/);
+  assert.match(readme, /cross-chunk boundary/i);
+});

@@ -224,7 +224,7 @@ export function renderForLLM(r: ReviewReport): string {
     if (d.flagged) marks.push("FLAGGED");
     const mark = marks.length ? `   <-- ${marks.join(", ")}` : "";
     lines.push(
-      `  ${dim.padEnd(14)} ${d.normalized.toFixed(2).padStart(5)}  ` +
+      `  ${dim.padEnd(24)} ${d.normalized.toFixed(2).padStart(5)}  ` +
         `raw ${d.raw.toFixed(2)}/4  conf ${d.confidence.toFixed(2)}${mark}`,
     );
   }

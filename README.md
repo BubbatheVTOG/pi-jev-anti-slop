@@ -2,20 +2,38 @@
 
 A **TypeSafe [Jev](https://docs.typesafe.ai)** code-review **judgment** for LLM-agent review loops, packaged as a pi extension.
 
-It scores a file or a diff for **bugs**, **AI-code slop**, and **code quality** (readability, maintainability, extensibility, testability, cleanliness), composes those signals into a **verdict** (`pass` / `review` / `block`) and a **prioritized flag list**, and hands that to the **main LLM to read the code and fix** — then you re-run until it's clean.
+It scores a file, diff, or named code chunk for **bugs**, **AI-code slop**, **security**, **memory use**, **speed**, and broad **code quality**, composes those signals into a **verdict** (`pass` / `review` / `block`) and a **prioritized flag list**, and hands that to the **main LLM to read the code and fix** — then you re-run until it's clean.
 
 ![Jev reviewing a TypeScript file and returning quality scores, defect probabilities, and a prioritized work list](docs/images/jev-review.png)
 
-The backward-compatible de-slop battery groups narrow checks into six categories:
+## What Jev checks
 
-- **Correctness:** missing returns, boundary errors, semantic mismatches, and races.
-- **Completeness:** stubs, placeholder behavior, fake results, and materially unfinished paths.
-- **Contracts:** unsafe type escapes, API/schema mismatches, ignored inputs, and unvalidated external data.
-- **Errors:** unhandled or swallowed failures, misleading success, and leaked resources.
-- **Security:** injection, authorization gaps, secret exposure, and untrusted path/URL handling.
-- **Design:** speculative abstractions and useless indirection that obscure behavior without adding a real boundary or benefit.
+Each review scores these dimensions from 0 (worst) to 4 (best):
 
-Every check is conditional on relevant code being present. For example, a file with no protected action or external URL should not be flagged for authorization or SSRF.
+- `readability` — naming, control flow, and how easily a new reader can reason about the code;
+- `maintainability` — cohesion, coupling, duplication, and change isolation;
+- `extensibility` — whether new cases can be added without rewriting core logic;
+- `testability` — isolation, side-effect boundaries, and practical test seams;
+- `cleanliness` — dead code, noise, consistency, and structural discipline;
+- `reliability` — failure behavior, recovery, invariants, retries, and idempotency where needed;
+- `security_posture` — secure defaults, trust boundaries, least privilege, and defense in depth;
+- `resource_efficiency` — bounded memory and resource lifetimes, allocation, streaming, and backpressure;
+- `performance_scalability` — complexity, latency, concurrency, batching, and hot-path work;
+- `api_contract_clarity` — explicit inputs, outputs, errors, ownership, and compatibility behavior;
+- `observability` — actionable errors, proportionate logs, metrics, traces, and privacy-safe diagnostic context.
+
+The targeted issue battery asks one independent probability question for every check below:
+
+- **Correctness:** `missing_return`, `bounds_offbyone`, `semantic_mismatch`, `race_concurrency`.
+- **Completeness:** `incomplete_implementation`.
+- **Contracts:** `unsafe_type_escape`, `contract_mismatch`, `unchecked_external_data`.
+- **Errors:** `unhandled_error`, `resource_leak`, `swallowed_error`, `misleading_success`.
+- **Security:** `injection_risk`, `authorization_gap`, `secret_exposure`, `untrusted_path_or_url`, `unsafe_deserialization`, `cryptographic_weakness`, `insecure_transport`.
+- **Memory:** `unbounded_memory_growth`, `retained_reference_leak`, `oversized_materialization`.
+- **Performance:** `algorithmic_complexity`, `repeated_expensive_work`, `blocking_hot_path`, `serial_independent_work`.
+- **Design:** `speculative_abstraction`, `useless_indirection`.
+
+Every check is conditional on relevant code being present. For example, code with no protected action, external URL, cryptographic operation, network transport, large input, or latency-sensitive path should not be flagged for the corresponding issue.
 
 > **Mental model.** Jev is a *triage* step, not a reviewer that writes prose. Per the [TypeSafe docs](https://docs.typesafe.ai), System One models return **typed judgments + probabilities** — never free-text explanations. So a flag is a **signal to look**, not a confirmed defect. The main agent reads the actual code and writes the real fix. That round trip is the review loop this extension serves.
 
@@ -62,15 +80,20 @@ Then `/reload`. The `jev_review` tool and `/jev` command appear only while `TYPE
 
 When the extension is active, the agent gets a `jev_review` tool. In a review loop you say things like *"review `src/foo.ts` before I commit"* and the agent calls:
 
-```
-jev_review(path: "src/foo.ts")          # review one file
+```text
+jev_review(path: "src/foo.ts")          # review one whole file
 jev_review(paths: ["src/a.ts", "src/b.ts"]) # review an explicit group
 jev_review(directory: "src", extensions: [".ts", ".tsx"]) # scan a codebase area
-jev_review(code: "<the diff>")          # review a changed hunk (preferred in a loop)
+jev_review(code: "<the diff>")          # review an anonymous changed hunk
+jev_review(path: "src/foo.ts", code: "<chunk>") # review a named chunk from a file
 jev_review(path: "src/foo.ts", language: "typescript", note: "refactor for the X feature")
 ```
 
-and reads back a structured report. Batch results are independent: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes the flagged items, and re-runs** until the file is clear.
+Combining `path` with `code` enables an efficient **divide-and-conquer search strategy**. The agent can split a large file into cohesive, preferably overlapping chunks; run focused reviews under the original filename; track which regions and boundaries have been covered; and investigate likely security, memory, performance, or correctness problems without repeatedly sending the entire file. A chunk finding is still verified against the full source, and the agent must not claim the whole file is clean until every relevant region and cross-chunk boundary has been checked.
+
+The tool's built-in agent guidance explicitly describes this strategy so an LLM can choose it when a whole-file review would waste context or make a targeted search less efficient.
+
+The agent reads back a structured report. Batch results are independent: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes the flagged items, and re-runs** until the file is clear.
 
 ### The human command
 
@@ -83,7 +106,7 @@ and reads back a structured report. Batch results are independent: every result 
 
 ### Example report
 
-```
+```text
 ## Jev code review — src/foo.ts
 verdict: REVIEW   composite health 0.41 / 1.00   escalate=true
 
@@ -128,6 +151,8 @@ extension/
   jev-command.ts   # the human `/jev review` / `/jev status` command
 tests/
   compose.test.ts  # unit tests for the pure composition logic (no SDK / API / I/O)
+  jev-tool.test.ts # filename-plus-chunk selection and safety tests
+  readme.test.ts   # keeps every dimension/check and chunk strategy documented
   security.test.ts # key-redaction, path-confinement, and config-validation tests
 ```
 
@@ -135,7 +160,8 @@ tests/
 
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
 - **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
-- **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
+- **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, memory, performance, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
+- **Efficient divide-and-conquer searches.** `jev_review(path, code)` associates a focused chunk or diff with its real source filename. Agent guidance recommends cohesive overlapping chunks, explicit coverage tracking, full-file verification of findings, and boundary checks so targeted searches save context without pretending that an isolated chunk proves the whole file is clean.
 - **Confidence is a second axis, not a truth value.** A low-confidence *failing* dimension is marked **uncertain** (escalate, don't hard-flag) — [`confidence`](https://docs.typesafe.ai/confidence.md) is distribution concentration, not correctness.
 - **Policy in code, raw judgments reusable.** The verdict and flag list are a pure function of `(raw, config)` (`compose.ts`). The report keeps the raw judgments so policy can change without a second API call.
 - **Freshness.** A review is about the code *as it is now*; nothing is cached — a review loop re-runs on the current code after each change.
@@ -149,7 +175,7 @@ All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `dimensionWeights` | `{readability:1.0, maintainability:1.2, extensibility:0.8, testability:1.2, cleanliness:0.8}` | Relative weight of each dimension in the composite (renormalized to sum 1). |
+| `dimensionWeights` | `{readability:1.0, maintainability:1.2, extensibility:0.8, testability:1.2, cleanliness:0.8, reliability:1.2, security_posture:1.2, resource_efficiency:1.0, performance_scalability:1.0, api_contract_clarity:1.0, observability:0.8}` | Relative weight of each dimension in the composite (renormalized to sum 1). |
 | `dimensionFlagBelow` | `0.5` | A dimension scoring below this (0..1) is flagged. |
 | `confidenceFloor` | `0.5` | A *flagged* dimension below this confidence becomes **uncertain** (escalate, don't hard-flag). |
 | `bugReviewThreshold` | `0.5` | P(yes) at/above which a bug signal routes to **review**. |
@@ -188,9 +214,9 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 
 - **A flag is not a proof.** Typed output guarantees the *interface*, not the *truth*. Treat every flag as a hypothesis to verify in the code.
 - **Jev accepts text only** (no images/audio/video). Its primary language is English; other languages work but with lower accuracy.
-- **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large files are truncated (see `MAX_CODE_CHARS`) — prefer passing the changed hunk.
+- **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large whole-file reviews are truncated (see `MAX_CODE_CHARS`). Use `path` plus `code` for a named chunk and a divide-and-conquer search, but remember that isolated chunks can miss cross-boundary control flow, shared state, and interactions with code outside the chunk.
 - **It does not explain or fix.** Wording in flags is authored by this extension from the judgment text; the explanation and the fix come from the main LLM (or you).
-- **Cost/latency.** One `systemOne` call per file. A directory or group review therefore costs one request per discovered file; `maxFiles` defaults to 200 for directory scans. Measure your real budget before wiring it into a hot loop.
+- **Cost/latency.** One `systemOne` call is made per file or supplied chunk. A directory or group review therefore costs one request per discovered file, while divide-and-conquer review costs one request per chunk; `maxFiles` defaults to 200 for directory scans. Measure your real budget and choose chunk sizes that reduce context without creating excessive calls.
 
 ## Security
 
