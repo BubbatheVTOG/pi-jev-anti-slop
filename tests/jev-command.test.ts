@@ -55,6 +55,7 @@ test("/jev parses typed reviews and preserves the legacy all-review form", () =>
       path: "src",
       language: "typescript",
       note: "hot-path",
+      sections: false,
     },
   );
   assert.deepEqual(parseReviewArguments(["review", "src/index.ts"]), {
@@ -62,9 +63,37 @@ test("/jev parses typed reviews and preserves the legacy all-review form", () =>
     path: "src/index.ts",
     language: undefined,
     note: "",
+    sections: false,
   });
   assert.match(
     parseReviewArguments(["review", "securty", "src"]).error ?? "",
     /unknown review type.*security/,
   );
+});
+
+test("/jev parses --sections as a standalone flag on typed and legacy forms", () => {
+  const typed = parseReviewArguments([
+    "review",
+    "prose",
+    "docs/guide.md",
+    "--sections",
+  ]);
+  assert.deepEqual(typed, {
+    reviewType: "prose",
+    path: "docs/guide.md",
+    language: undefined,
+    note: "",
+    sections: true,
+  });
+  const legacy = parseReviewArguments(["review", "docs/guide.md", "--sections"]);
+  assert.deepEqual(legacy, {
+    reviewType: "all",
+    path: "docs/guide.md",
+    language: undefined,
+    note: "",
+    sections: true,
+  });
+  // A bare `--sections` without a path is not a second positional: the
+  // legacy two-positional error must not fire because of it.
+  assert.equal(parseReviewArguments(["review", "--sections"]).error, undefined);
 });

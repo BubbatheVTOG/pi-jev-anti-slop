@@ -8,7 +8,7 @@ import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import { hasKey, keyMasked } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport, renderForLLM } from "./compose.ts";
-import { resolveTargets } from "./jev-tool.ts";
+import { resolveTargets, runSectionReviews } from "./jev-tool.ts";
 import { runReview } from "./review.ts";
 import { redactLikelySecrets, resolveSafeReviewPath } from "./path-policy.ts";
 import { REVIEW_TYPES, type ReviewType } from "./types.ts";
@@ -32,7 +32,7 @@ const REVIEW_TYPE_DESCRIPTIONS: Record<ReviewType, string> = {
   design: "Speculative abstraction and useless indirection",
 };
 const USAGE =
-  "usage: /jev review <review-type> <file-or-directory> [--lang <lang>] [--note <text>]   |   /jev status";
+  "usage: /jev review <review-type> <file-or-directory> [--lang <lang>] [--note <text>] [--sections]   |   /jev status";
 
 type ResolvedSelection = ReturnType<typeof resolveTargets>;
 type ConfigLoader = (cwd: string, projectTrusted: boolean) => JevConfig;
@@ -69,6 +69,7 @@ export function parseReviewArguments(parts: string[]): {
   path?: string;
   language?: string;
   note: string;
+  sections: boolean;
   error?: string;
 } {
   const candidate = (parts[1] ?? "").toLowerCase();
@@ -78,6 +79,7 @@ export function parseReviewArguments(parts: string[]): {
     return {
       reviewType: "all",
       note: "",
+      sections: false,
       error: `unknown review type "${candidate}"; expected one of: ${REVIEW_TYPES.join(", ")}`,
     };
   }
@@ -86,11 +88,13 @@ export function parseReviewArguments(parts: string[]): {
   const path = parts[pathIndex];
   let language: string | undefined;
   let note = "";
+  let sections = false;
   for (let i = pathIndex + 1; i < parts.length; i++) {
     if (parts[i] === "--lang" && parts[i + 1]) language = parts[++i];
     else if (parts[i] === "--note" && parts[i + 1]) note = parts[++i];
+    else if (parts[i] === "--sections") sections = true;
   }
-  return { reviewType, path, language, note };
+  return { reviewType, path, language, note, sections };
 }
 
 function notifyStatus(ctx: ExtensionCommandContext, cfg: JevConfig): void {
@@ -191,6 +195,72 @@ async function runSelectedReviews(
   }
 }
 
+async function runSectionCommand(
+  client: TypeSafeClient,
+  cfg: JevConfig,
+  ctx: ExtensionCommandContext,
+  parsed: ReturnType<typeof parseReviewArguments>,
+): Promise<void> {
+  const resolved = resolveSafeReviewPath(ctx.cwd, parsed.path ?? "", "file");
+  if (!resolved.ok) {
+    ctx.ui.notify(`jev: ${resolved.error}`, "error");
+    return;
+  }
+  try {
+    if (!statSync(resolved.path).isFile()) {
+      ctx.ui.notify(
+        "jev: --sections requires a single file, not a directory.",
+        "warning",
+      );
+      return;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.ui.notify(`jev: could not inspect review target: ${message}`, "error");
+    return;
+  }
+  ctx.ui.notify(
+    `jev: running ${parsed.reviewType} section review on ${resolved.path} — calling TypeSafe…`,
+    "info",
+  );
+  try {
+    const { results, skippedEmpty } = await runSectionReviews(
+      client,
+      cfg,
+      resolved.path,
+      parsed.reviewType,
+      parsed.note,
+      (section, index, total) => {
+        ctx.ui.notify(
+          `jev: section ${index + 1}/${total} — L${section.start}-${section.end}${section.heading ? ` ${section.heading}` : ""}`,
+          "info",
+        );
+      },
+    );
+    const failed = results.filter((section) => !section.ok).length;
+    for (const section of results) {
+      if (!section.ok) {
+        ctx.ui.notify(
+          `jev: ${section.file} L${section.start}-${section.end} — ${section.error}`,
+          "error",
+        );
+        continue;
+      }
+      ctx.ui.notify(renderForLLM(section.report), "info");
+    }
+    ctx.ui.notify(
+      `jev: section review complete: ${results.length - failed}/${results.length} sections${failed ? `, ${failed} failed` : ""}${skippedEmpty ? ` (${skippedEmpty} blank section(s) skipped)` : ""}.`,
+      "info",
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.ui.notify(
+      `jev: section review failed for ${resolved.path} — ${message}`,
+      "error",
+    );
+  }
+}
+
 async function handleJevCommand(
   args: string,
   ctx: ExtensionCommandContext,
@@ -234,6 +304,10 @@ async function handleJevCommand(
   }
   if (!parsed.path) {
     ctx.ui.notify(`jev: missing <file-or-directory>. ${USAGE}`, "warning");
+    return;
+  }
+  if (parsed.sections) {
+    await runSectionCommand(client, cfg, ctx, parsed);
     return;
   }
   const selection = selectReviewTargets(

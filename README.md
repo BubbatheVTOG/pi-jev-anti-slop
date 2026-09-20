@@ -89,12 +89,24 @@ jev_review(reviewType: "prose", directory: "docs") # targeted documentation batc
 jev_review(reviewType: "security", paths: ["src/a.ts", "src/b.ts"])
 jev_review(code: "<the diff>")          # review an anonymous changed hunk
 jev_review(path: "src/foo.ts", code: "<chunk>") # review a named chunk from a file
+jev_review(path: "docs/guide.md", reviewType: "prose", sections: true) # one review per ## section
 jev_review(path: "src/foo.ts", language: "typescript", note: "refactor for the X feature")
 ```
 
 Combining `path` with `code` enables an efficient **divide-and-conquer search strategy**. The agent can split a large file into cohesive, preferably overlapping chunks; run focused reviews under the original filename; track which regions and boundaries have been covered; and investigate likely security, memory, performance, or correctness problems without repeatedly sending the entire file. A chunk finding is still verified against the full source, and the agent must not claim the whole file is clean until every relevant region and cross-chunk boundary has been checked.
 
 The tool's built-in agent guidance explicitly describes this strategy so an LLM can choose it when a whole-file review would waste context or make a targeted search less efficient.
+
+### Section-level review (divide-and-conquer by heading)
+
+For a single file that is too large to review as one chunk, `sections: true` with `path` splits the file along its own structure and runs **one independent review per section**:
+
+- Sections are delimited by level-2 headings (`##`); lines inside fenced code blocks never count as boundaries, so `##` comments in shell or Python examples do not split the file.
+- A file without `##` headings degrades to a single whole-file section, so the same call stays safe on any text file.
+- Every section gets its own TypeSafe request (secret redaction runs per section) and its own report. Results retain the exact `file` path, the **1-based inclusive line range**, and the section heading, so findings are locatable without re-reading the file. Batch results persist in tool-result `details` under `sections`, and blank sections are skipped and counted, never sent.
+- A section finding is still a signal to investigate: verify each flagged section against the full file before changing anything, and do not claim the file is clean until every section and its boundaries have been checked.
+
+The same capability is exposed on the command line with `--sections` (single file only); see the command block below, e.g. `/jev review prose docs/guide.md --sections`.
 
 The agent reads back a structured report. Set `reviewType` to the narrowest relevant scope; `prose` directory scans default to documentation extensions, while other directory scans default to source-code extensions. Batch results are independent and persist in tool-result `details`: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. Progress updates identify the current file and completed count. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes verified issues, and re-runs** until the file is clear.
 
@@ -107,6 +119,7 @@ The agent reads back a structured report. Set `reviewType` to the narrowest rele
 /jev review memory src/cache.ts                 # memory checks for one file
 /jev review performance src                     # speed/scalability checks across a directory
 /jev review prose docs                          # writing review for documentation files
+/jev review prose docs/guide.md --sections      # one prose review per ## section (line ranges in output)
 /jev review prose src/parser.ts                 # review comments/docstrings, ignore code
 /jev status                                     # key presence, review types, and thresholds
 ```

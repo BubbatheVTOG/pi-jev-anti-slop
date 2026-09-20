@@ -376,3 +376,27 @@ export interface ReviewReport {
  /** Raw judgments, kept for re-scoring without re-calling the API. */
  raw: RawJudgments;
 }
+
+/**
+ * One section of a section-level review: the exact file plus the 1-based
+ * inclusive line range and heading of the reviewed section, so findings can
+ * be located without re-reading the whole file. The same discriminated
+ * ok/error shape as the per-file results keeps batch rendering uniform.
+ */
+export type SectionReviewResult =
+ | {
+    file: string;
+    start: number;
+    end: number;
+    heading: string;
+    ok: true;
+    report: ReviewReport;
+   }
+ | {
+    file: string;
+    start: number;
+    end: number;
+    heading: string;
+    ok: false;
+    error: string;
+   };
