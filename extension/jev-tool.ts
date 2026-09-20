@@ -11,7 +11,11 @@ import {
   redactLikelySecrets,
   resolveSafeReviewPath,
 } from "./path-policy.ts";
-import type { ReviewReport } from "./types.ts";
+import {
+  REVIEW_TYPES,
+  type ReviewReport,
+  type ReviewType,
+} from "./types.ts";
 
 /**
  * LLM-callable code review. A request can target one file, an explicit group,
@@ -41,6 +45,7 @@ const DEFAULT_EXTENSIONS = [
   ".h",
   ".hpp",
 ];
+const PROSE_EXTENSIONS = [".md", ".mdx", ".txt", ".rst", ".adoc", ".asciidoc"];
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   ".hg",
@@ -55,7 +60,14 @@ const IGNORED_DIRECTORIES = new Set([
 ]);
 const DEFAULT_MAX_FILES = 200;
 
+const REVIEW_TYPE_SCHEMA = Type.String({
+  enum: [...REVIEW_TYPES],
+  description:
+    "Review scope. `all` runs every score and issue check; targeted types run only their relevant questions. Defaults to `all`.",
+});
+
 const PARAMS = Type.Object({
+  reviewType: Type.Optional(REVIEW_TYPE_SCHEMA),
   path: Type.Optional(
     Type.String({
       description:
@@ -128,9 +140,17 @@ type FileResult =
       error: string;
     };
 
-function normalizeExtensions(extensions: string[] | undefined): Set<string> {
+export function resolveReviewType(value: string | undefined): ReviewType {
+  return REVIEW_TYPES.find((reviewType) => reviewType === value) ?? "all";
+}
+
+export function normalizeExtensions(
+  extensions: string[] | undefined,
+  reviewType: ReviewType = "all",
+): Set<string> {
+  const defaults = reviewType === "prose" ? PROSE_EXTENSIONS : DEFAULT_EXTENSIONS;
   return new Set(
-    (extensions ?? DEFAULT_EXTENSIONS).map((value) => {
+    (extensions ?? defaults).map((value) => {
       const trimmed = value.trim().toLowerCase();
       return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
     }),
@@ -198,6 +218,7 @@ export function resolveTargets(
     extensions?: string[];
     maxFiles?: number;
     code?: string;
+    reviewType?: ReviewType;
   },
 ): {
   targets: ReviewTarget[];
@@ -261,7 +282,10 @@ export function resolveTargets(
       return { targets: [], selectionError: resolved.error };
     }
     const directory = resolved.path;
-    const extensions = normalizeExtensions(params.extensions);
+    const extensions = normalizeExtensions(
+      params.extensions,
+      params.reviewType ?? "all",
+    );
     const scan = collectFiles(
       directory,
       extensions,
@@ -303,22 +327,25 @@ export function registerJevReviewTool(
     label: "Jev code review",
     description:
       "Run independent TypeSafe Jev reviews on one file, an explicit group of files, a whole codebase directory, or a named chunk from a file. " +
-      "Use `path` for one file, `paths` for exact files, `directory` for a recursive scan, or combine `path` with `code` to review a supplied chunk/diff while preserving its filename. Targets must remain inside the current project and sensitive credential files are rejected. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and errors are isolated to that file. " +
-      "This is a signal to investigate, not proof: verify each item in the code before changing it.",
+      "Set `reviewType` to `all`, `quality`, `correctness`, `completeness`, `contracts`, `errors`, `security`, `memory`, `performance`, `prose`, or `design`; targeted types send only relevant questions. Use `path` for one file, `paths` for exact files, `directory` for a recursive scan, or combine `path` with `code` to review a supplied chunk/diff while preserving its filename. Prose directory scans default to documentation extensions. Targets must remain inside the current project and sensitive credential files are rejected. Every result includes the exact normalized file path, verdict, composite score, per-file flags, and isolated errors. " +
+      "This is a signal to investigate, not proof: verify each item in the supplied material before changing it.",
     promptSnippet:
-      "Run jev_review per file after writing code. For focused divide-and-conquer searches, pass a filename in `path` with a cohesive chunk in `code`, investigate its flags in context, and continue through the remaining chunks.",
+      "Run jev_review with a targeted reviewType when appropriate. Directory batches return structured per-file results; for divide-and-conquer searches, pass a filename in `path` with a cohesive chunk in `code`.",
     promptGuidelines: [
-      "Use `path` for one whole file, `paths` for an explicit group, or `directory` to review a whole codebase recursively.",
+      "Set jev_review `reviewType` to the narrowest relevant scope; use `all` only when the task needs every score and issue category.",
+      "Use `path` for one whole file, `paths` for an explicit group, or `directory` to review a whole codebase recursively. Directory results persist structured per-file reports and isolated errors in tool details.",
       "For a large file or a targeted bug search, divide it into cohesive, preferably overlapping chunks and call `jev_review` with the same `path` plus each chunk in `code`. Track coverage, investigate each flag against the full file, and do not claim the file is clean until all relevant chunks and their boundaries have been checked.",
       "Treat every returned file independently: use the exact `file` field to read and fix only that file, then re-run Jev for the changed files.",
       "A batch contains one TypeSafe request per file; do not treat a composite-only verdict as proof of a defect.",
     ],
     parameters: PARAMS,
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, onUpdate, ctx) {
       const result = (text: string, details: Record<string, unknown>) => ({
         content: [{ type: "text" as const, text }],
         details,
       });
+
+      const reviewType = resolveReviewType(params.reviewType);
 
       if (!hasKey()) {
         return result(
@@ -340,7 +367,7 @@ export function registerJevReviewTool(
 
       let selection: ReturnType<typeof resolveTargets>;
       try {
-        selection = resolveTargets(ctx.cwd, params);
+        selection = resolveTargets(ctx.cwd, { ...params, reviewType });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return result(
@@ -365,7 +392,29 @@ export function registerJevReviewTool(
         });
       }
 
+      const sanitizedNote = redactLikelySecrets(params.note ?? "");
+      const baseNote = sanitizedNote.redacted
+        ? `[credentials redacted from review note] ${sanitizedNote.code}`
+        : sanitizedNote.code;
       const results: FileResult[] = [];
+      let completed = 0;
+      const updateProgress = (file: string): void => {
+        completed += 1;
+        onUpdate?.({
+          content: [
+            {
+              type: "text" as const,
+              text: `Jev ${reviewType} review: ${completed}/${selection.targets.length} — ${file}`,
+            },
+          ],
+          details: {
+            reviewType,
+            completed,
+            total: selection.targets.length,
+            file,
+          },
+        });
+      };
       for (const target of selection.targets) {
         const file = target.file;
         if (target.error || !target.code) {
@@ -374,10 +423,11 @@ export function registerJevReviewTool(
             ok: false,
             error: target.error ?? "file is empty",
           });
+          updateProgress(file);
           continue;
         }
         let code = target.code;
-        let note = params.note ?? "";
+        let note = baseNote;
         if (code.length > MAX_CODE_CHARS) {
           code = code.slice(0, MAX_CODE_CHARS);
           note = `[note: file was truncated for this review; read the full file on disk] ${note}`;
@@ -391,12 +441,17 @@ export function registerJevReviewTool(
           const scope = target.suppliedChunk
             ? `chunk review: judge only the supplied chunk from ${file}; inspect surrounding code before acting on a flag; `
             : `per-file review: judge only ${file}; `;
-          const raw = await runReview(client, {
-            path: file,
-            language: params.language ?? (extname(file).slice(1) || "unknown"),
-            note: `${scope}${note}`,
-            code,
-          });
+          const raw = await runReview(
+            client,
+            {
+              path: file,
+              language:
+                params.language ?? (extname(file).slice(1) || "unknown"),
+              note: `${scope}${note}`,
+              code,
+            },
+            reviewType,
+          );
           results.push({
             file,
             ok: true,
@@ -409,6 +464,7 @@ export function registerJevReviewTool(
             error: error instanceof Error ? error.message : String(error),
           });
         }
+        updateProgress(file);
       }
 
       const successful = results.filter(
@@ -416,7 +472,7 @@ export function registerJevReviewTool(
       );
       const failed = results.length - successful.length;
       const summary = [
-        `Jev per-file review complete: ${successful.length}/${results.length} reviewed${failed ? `, ${failed} failed` : ""}.`,
+        `Jev ${reviewType} review complete: ${successful.length}/${results.length} reviewed${failed ? `, ${failed} failed` : ""}.`,
         ...(selection.scanTruncated
           ? [
               `WARNING: directory scan reached the ${params.maxFiles ?? DEFAULT_MAX_FILES}-file cap; review the remaining files separately.`,
@@ -426,6 +482,7 @@ export function registerJevReviewTool(
       ].join("\n");
       return result(summary, {
         ok: failed === 0,
+        reviewType,
         mode: selection.targets.length === 1 ? "single" : "batch",
         files: results,
         scanTruncated: selection.scanTruncated ?? false,

@@ -85,6 +85,8 @@ When the extension is active, the agent gets a `jev_review` tool. In a review lo
 jev_review(path: "src/foo.ts")          # review one whole file
 jev_review(paths: ["src/a.ts", "src/b.ts"]) # review an explicit group
 jev_review(directory: "src", extensions: [".ts", ".tsx"]) # scan a codebase area
+jev_review(reviewType: "prose", directory: "docs") # targeted documentation batch
+jev_review(reviewType: "security", paths: ["src/a.ts", "src/b.ts"])
 jev_review(code: "<the diff>")          # review an anonymous changed hunk
 jev_review(path: "src/foo.ts", code: "<chunk>") # review a named chunk from a file
 jev_review(path: "src/foo.ts", language: "typescript", note: "refactor for the X feature")
@@ -94,7 +96,7 @@ Combining `path` with `code` enables an efficient **divide-and-conquer search st
 
 The tool's built-in agent guidance explicitly describes this strategy so an LLM can choose it when a whole-file review would waste context or make a targeted search less efficient.
 
-The agent reads back a structured report. Batch results are independent: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes the flagged items, and re-runs** until the file is clear.
+The agent reads back a structured report. Set `reviewType` to the narrowest relevant scope; `prose` directory scans default to documentation extensions, while other directory scans default to source-code extensions. Batch results are independent and persist in tool-result `details`: every result includes an exact normalized `file` path, its own verdict, flags, and any per-file error. Progress updates identify the current file and completed count. **If `escalate=true` or there are `error` flags, the agent reads that exact file, fixes verified issues, and re-runs** until the file is clear.
 
 ### The human command
 
@@ -173,7 +175,7 @@ tests/
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
 - **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
 - **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, memory, performance, prose, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
-- **Targeted review types.** `/jev review <review-type> <file-or-directory>` sends only the score or issue questions relevant to that type. This reduces cost and noise when searching specifically for security, memory, performance, prose, or another category; `all` retains the complete review.
+- **Targeted review types.** Both `jev_review(reviewType, ...)` and `/jev review <review-type> <file-or-directory>` send only the score or issue questions relevant to that type. This reduces cost and noise when searching specifically for security, memory, performance, prose, or another category; `all` retains the complete review. Tool batches persist structured per-file reports, progress, truncation state, and isolated errors in result details.
 - **Documentation and prose de-slopping.** The `prose` type checks style, factual support, grammar, usage, mechanics, cadence, tone, audience fit, stale instructions, and common LLM-writing artifacts. It can review documentation files or natural-language comments/docstrings in source without treating executable code as prose.
 - **Efficient divide-and-conquer searches.** `jev_review(path, code)` associates a focused chunk or diff with its real source filename. Agent guidance recommends cohesive overlapping chunks, explicit coverage tracking, full-file verification of findings, and boundary checks so targeted searches save context without pretending that an isolated chunk proves the whole file is clean.
 - **Confidence is a second axis, not a truth value.** A low-confidence *failing* dimension is marked **uncertain** (escalate, don't hard-flag) — [`confidence`](https://docs.typesafe.ai/confidence.md) is distribution concentration, not correctness.

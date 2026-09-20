@@ -33,5 +33,7 @@ test("README documents the 0-10 scale, typed command, and prose review", () => {
   assert.match(readme, /0 \(worst\) to 10 \(best\)/);
   assert.match(readme, /\/jev review <review-type> <file-or-directory>/);
   assert.match(readme, /\/jev review prose docs/);
+  assert.match(readme, /jev_review\(reviewType: "prose", directory: "docs"\)/);
+  assert.match(readme, /structured per-file reports/i);
   assert.match(readme, /grammar, usage, mechanics, cadence/i);
 });
