@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { keyMasked } from "../extension/availability.ts";
 import { DEFAULTS, resolveConfig } from "../extension/config.ts";
-import { resolveSafeReviewPath } from "../extension/path-policy.ts";
+import {
+  redactLikelySecrets,
+  resolveSafeReviewPath,
+} from "../extension/path-policy.ts";
 
 test("API-key status never reveals key material", () => {
   const key = "abcd-super-secret-wxyz";
@@ -20,6 +23,18 @@ test("API-key status never reveals key material", () => {
   assert.ok(!marker.includes("abcd"));
   assert.ok(!marker.includes("wxyz"));
   assert.ok(!marker.includes(String(key.length)));
+});
+
+test("likely credentials are redacted before external review", () => {
+  const input = [
+    'const apiKey = "example-value-that-must-not-leave";',
+    "const ordinary = 'preserved';",
+  ].join("\n");
+  const result = redactLikelySecrets(input);
+  assert.equal(result.redacted, true);
+  assert.ok(!result.code.includes("example-value-that-must-not-leave"));
+  assert.ok(result.code.includes("[REDACTED]"));
+  assert.ok(result.code.includes("ordinary = 'preserved'"));
 });
 
 test("review paths stay inside the project and reject sensitive files", () => {
@@ -31,22 +46,19 @@ test("review paths stay inside the project and reject sensitive files", () => {
   writeFileSync(join(parent, "outside.ts"), "export const outside = true;\n");
   symlinkSync(join(parent, "outside.ts"), join(root, "escape.ts"));
   try {
-    assert.equal(
-      resolveSafeReviewPath(root, "safe.ts", "file"),
-      join(root, "safe.ts"),
-    );
-    assert.throws(
-      () => resolveSafeReviewPath(root, ".env", "file"),
-      /sensitive/,
-    );
-    assert.throws(
-      () => resolveSafeReviewPath(root, "../outside.ts", "file"),
-      /outside/,
-    );
-    assert.throws(
-      () => resolveSafeReviewPath(root, "escape.ts", "file"),
-      /outside/,
-    );
+    assert.deepEqual(resolveSafeReviewPath(root, "safe.ts", "file"), {
+      ok: true,
+      path: join(root, "safe.ts"),
+    });
+    const sensitive = resolveSafeReviewPath(root, ".env", "file");
+    assert.equal(sensitive.ok, false);
+    if (!sensitive.ok) assert.match(sensitive.error, /sensitive/);
+    const parentEscape = resolveSafeReviewPath(root, "../outside.ts", "file");
+    assert.equal(parentEscape.ok, false);
+    if (!parentEscape.ok) assert.match(parentEscape.error, /outside/);
+    const symlinkEscape = resolveSafeReviewPath(root, "escape.ts", "file");
+    assert.equal(symlinkEscape.ok, false);
+    if (!symlinkEscape.ok) assert.match(symlinkEscape.error, /outside/);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

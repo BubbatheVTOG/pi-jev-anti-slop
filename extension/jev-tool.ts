@@ -7,7 +7,10 @@ import { hasKey } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport } from "./compose.ts";
 import { runReview } from "./review.ts";
-import { resolveSafeReviewPath } from "./path-policy.ts";
+import {
+  redactLikelySecrets,
+  resolveSafeReviewPath,
+} from "./path-policy.ts";
 import type { ReviewReport } from "./types.ts";
 
 /**
@@ -220,14 +223,21 @@ function resolveTargets(
   if (requested.length > 0) {
     const targets: ReviewTarget[] = [];
     for (const requestedPath of requested) {
-      const file = resolveSafeReviewPath(cwd, requestedPath, "file");
-      targets.push(readTarget(file));
+      const resolved = resolveSafeReviewPath(cwd, requestedPath, "file");
+      if (!resolved.ok) {
+        return { targets: [], selectionError: resolved.error };
+      }
+      targets.push(readTarget(resolved.path));
     }
     return { targets };
   }
 
   if (params.directory) {
-    const directory = resolveSafeReviewPath(cwd, params.directory, "directory");
+    const resolved = resolveSafeReviewPath(cwd, params.directory, "directory");
+    if (!resolved.ok) {
+      return { targets: [], selectionError: resolved.error };
+    }
+    const directory = resolved.path;
     const extensions = normalizeExtensions(params.extensions);
     const scan = collectFiles(
       directory,
@@ -347,6 +357,11 @@ export function registerJevReviewTool(
         if (code.length > MAX_CODE_CHARS) {
           code = code.slice(0, MAX_CODE_CHARS);
           note = `[note: file was truncated for this review; read the full file on disk] ${note}`;
+        }
+        const sanitized = redactLikelySecrets(code);
+        code = sanitized.code;
+        if (sanitized.redacted) {
+          note = `[credentials redacted before review] ${note}`;
         }
         try {
           const raw = await runReview(client, {

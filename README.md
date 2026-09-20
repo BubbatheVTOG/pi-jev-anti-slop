@@ -196,5 +196,6 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 - Status displays reveal only `set` or `unset`; they never expose key characters or length.
 - File and directory targets are confined to the current project root after resolving symlinks.
 - Likely credential files such as `.env`, `.npmrc`, private keys, and credential JSON files are rejected before code is sent to TypeSafe.
-- Inline `code` is assumed to be deliberately supplied by the caller; do not paste secrets into it.
+- High-confidence credential shapes—including private-key blocks, common provider tokens, and credential assignments—are replaced with `[REDACTED]` before file or inline code is sent.
+- Redaction is defense in depth, not a complete secret scanner; do not deliberately submit credentials.
 - Keep the key server-side; this extension never persists it.

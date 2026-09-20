@@ -5,7 +5,10 @@ import { hasKey, keyMasked } from "./availability.ts";
 import type { JevConfig } from "./config.ts";
 import { composeReport, renderForLLM } from "./compose.ts";
 import { runReview } from "./review.ts";
-import { resolveSafeReviewPath } from "./path-policy.ts";
+import {
+  redactLikelySecrets,
+  resolveSafeReviewPath,
+} from "./path-policy.ts";
 
 /**
  * The human-invoked side: `/jev review <path>` and `/jev status`. Shares the exact
@@ -71,14 +74,12 @@ export function registerJevCommand(
         ctx.ui.notify(`jev: missing <path>. ${USAGE}`, "warning");
         return;
       }
-      let p: string;
-      try {
-        p = resolveSafeReviewPath(ctx.cwd, pathArg, "file");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`jev: invalid review target — ${message}`, "error");
+      const resolved = resolveSafeReviewPath(ctx.cwd, pathArg, "file");
+      if (!resolved.ok) {
+        ctx.ui.notify(`jev: invalid review target — ${resolved.error}`, "error");
         return;
       }
+      const p = resolved.path;
 
       // Minimal --lang / --note parsing (value follows the flag).
       let language: string | undefined;
@@ -89,7 +90,7 @@ export function registerJevCommand(
       }
 
       try {
-        const code = readFileSync(p, "utf8");
+        const sanitized = redactLikelySecrets(readFileSync(p, "utf8"));
         ctx.ui.notify(
           `jev: reviewing ${p} — calling TypeSafe (this can take a few seconds)…`,
           "info",
@@ -97,8 +98,10 @@ export function registerJevCommand(
         const raw = await runReview(client, {
           path: p,
           language: language ?? "unknown",
-          note,
-          code,
+          note: sanitized.redacted
+            ? `[credentials redacted before review] ${note}`
+            : note,
+          code: sanitized.code,
         });
         const report = composeReport(raw, cfg, p);
         ctx.ui.notify(renderForLLM(report), "info");
