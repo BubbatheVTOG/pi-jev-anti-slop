@@ -26,7 +26,11 @@ import {
  * available.
  */
 
-const MAX_CODE_CHARS = 200_000;
+/**
+ * Keep source material comfortably inside Jev's 32k context after adding the
+ * question battery and protocol state (roughly 20k tokens at four chars/token).
+ */
+export const MAX_CODE_CHARS = 80_000;
 const DEFAULT_EXTENSIONS = [
   ".ts",
   ".tsx",
@@ -60,7 +64,8 @@ const IGNORED_DIRECTORIES = new Set([
   ".venv",
   "venv",
 ]);
-const DEFAULT_MAX_FILES = 200;
+export const DEFAULT_MAX_FILES = 50;
+export const MAX_FILES = 200;
 
 const REVIEW_TYPE_SCHEMA = Type.String({
   enum: [...REVIEW_TYPES],
@@ -81,7 +86,7 @@ const PARAMS = Type.Object({
       description:
         "Explicit cwd-relative paths, or absolute paths inside the current project root. Each file is reviewed independently and returned with its exact normalized path.",
       minItems: 1,
-      maxItems: DEFAULT_MAX_FILES,
+      maxItems: MAX_FILES,
     }),
   ),
   directory: Type.Optional(
@@ -102,7 +107,7 @@ const PARAMS = Type.Object({
     Type.Integer({
       description: `Maximum files in a directory scan; default ${DEFAULT_MAX_FILES}.`,
       minimum: 1,
-      maximum: DEFAULT_MAX_FILES,
+      maximum: MAX_FILES,
     }),
   ),
   code: Type.Optional(

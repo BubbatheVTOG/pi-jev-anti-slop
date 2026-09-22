@@ -93,6 +93,28 @@ jev_review(path: "docs/guide.md", reviewType: "prose", sections: true) # one rev
 jev_review(path: "src/foo.ts", language: "typescript", note: "refactor for the X feature")
 ```
 
+#### `jev_review` input reference
+
+| Input | Default | Accepted values and behavior |
+| --- | --- | --- |
+| `reviewType` | `"all"` | `all`, `quality`, `correctness`, `completeness`, `contracts`, `errors`, `security`, `memory`, `performance`, `prose`, or `design`. Targeted types send only relevant questions. |
+| `path` | — | One cwd-relative or project-contained absolute file. Combine with `code` for a named chunk, or with `sections: true` for heading-based review. |
+| `paths` | — | Explicit file array, 1–200 entries. Each file receives an independent request/report. |
+| `directory` | — | Project-contained recursive scan. Mutually exclusive with inline `code`. |
+| `extensions` | source defaults | Directory-scan extensions such as `[".ts", ".tsx"]`. Prose scans default to documentation extensions. |
+| `maxFiles` | `50` | Integer 1–200 limiting a directory scan. The conservative default bounds accidental request fan-out; truncation is reported explicitly. |
+| `code` | — | Inline diff/chunk/text. With `path`, preserves the source filename; without it, target is `<inline>`. |
+| `language` | inferred | Optional language hint for file or inline review. |
+| `note` | empty | Context/constraints supplied with the review after likely-secret redaction. |
+| `sections` | `false` | Single-file only. Splits on fence-aware `## ` headings and returns 1-based inclusive ranges. |
+
+Exactly one target mode is used: `path`, `paths`, `directory`, or anonymous
+`code`, except the documented `path + code` and `path + sections` combinations.
+Targets are confined to the project and likely credential files are rejected.
+File/chunk material is capped at 80,000 characters per request (roughly 20k
+tokens, leaving room in Jev's 32k context for questions/protocol) and reports an
+explicit truncation note.
+
 Combining `path` with `code` enables an efficient **divide-and-conquer search strategy**. The agent can split a large file into cohesive, preferably overlapping chunks; run focused reviews under the original filename; track which regions and boundaries have been covered; and investigate likely security, memory, performance, or correctness problems without repeatedly sending the entire file. A chunk finding is still verified against the full source, and the agent must not claim the whole file is clean until every relevant region and cross-chunk boundary has been checked.
 
 The tool's built-in agent guidance explicitly describes this strategy so an LLM can choose it when a whole-file review would waste context or make a targeted search less efficient.
@@ -135,11 +157,11 @@ The original `/jev review <path>` form remains a backward-compatible alias for `
 verdict: REVIEW   composite health 0.41 / 1.00   escalate=true
 
 Dimensions (0=worst → 1=best, normalized from Jev's 1–10 rubric; conf = Jev confidence):
-  readability              0.62  raw 6.20/10  conf 0.71
-  maintainability          0.38  raw 3.80/10  conf 0.66   <-- FLAGGED
-  extensibility            0.55  raw 5.50/10  conf 0.52
-  testability              0.21  raw 2.10/10  conf 0.73   <-- FLAGGED
-  cleanliness              0.49  raw 4.90/10  conf 0.44   <-- FLAGGED
+  readability              0.58  raw 6.20/10  conf 0.71
+  maintainability          0.31  raw 3.80/10  conf 0.66   <-- FLAGGED
+  extensibility            0.50  raw 5.50/10  conf 0.52
+  testability              0.12  raw 2.10/10  conf 0.73   <-- FLAGGED
+  cleanliness              0.43  raw 4.90/10  conf 0.44   <-- FLAGGED
 
 Issue signals (P(yes) the issue is present; higher = more likely a real finding):
   missing_return     P=0.12  pass
@@ -153,7 +175,7 @@ Work list (error → warning → info); read the file and fix these before conti
   1. [warning] Review: unhandled_error  (signal confidence 0.68)
        Is there any fallible operation … whose failure path is never handled …
   2. [warning] Improve: testability  (signal confidence 0.73)
-       testability scored 0.21 (below the 0.5 bar). Read the file and improve …
+       testability scored 0.12 (below the 0.5 bar). Read the file and improve …
   ...
 ```
 
@@ -163,8 +185,8 @@ Work list (error → warning → info); read the file and fix these before conti
 
 ```text
 extension/
-  index.ts         # factory: the GATE (no key → register nothing) + wiring
-  availability.ts  # pure env gate: hasKey() / resolveKey() / keyMasked()  (mirrors agent-voice)
+  index.ts         # factory: explicit-disable gate + tool/command wiring
+  availability.ts  # privacy-safe key presence/resolution helpers
   types.ts         # SDK-free shared types + the judgment vocabulary (dims, bug classes, rubric size)
   config.ts        # the policy: thresholds + weights, overridable via a `jev` settings block
   questions.ts     # the rubric — the ONLY place judgment wording lives (score + noul questions)
@@ -225,6 +247,17 @@ All knobs live in `config.ts` (`DEFAULTS`). You can override any of them in a **
 }
 ```
 
+### Default rationale
+
+The default review policy deliberately requires a concrete issue, flagged
+quality dimension, or uncertainty signal before escalating; composite score
+alone is context. `bugReviewThreshold: 0.5` asks for investigation at an even
+signal, while `bugBlockThreshold: 0.85` reserves blocking for strong signals.
+Directory scans default to 50 files (maximum 200) to bound cost, and each file or
+chunk is capped at 80,000 characters to fit Jev's 32k context with room for the
+question battery. Targeted review types are the preferred lower-cost default
+when the concern is known.
+
 > **Tuning.** These are **starting points, not rules**. The docs are explicit that cookbook thresholds are *examples to evaluate, not universal limits*. Jev is a trained, calibrated decision model — **validate its behavior on your own code** and adjust until the flag rate matches your tolerance.
 
 ---
@@ -247,11 +280,12 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 - **Jev accepts text only** (no images/audio/video). Its primary language is English; other languages work but with lower accuracy.
 - **It reviews what it's shown.** Pass a diff for a change-level review; it can't see code it wasn't given. Large whole-file reviews are truncated (see `MAX_CODE_CHARS`). Use `path` plus `code` for a named chunk and a divide-and-conquer search, but remember that isolated chunks can miss cross-boundary control flow, shared state, and interactions with code outside the chunk. Prose accuracy checks can identify unsupported, contradictory, stale, or overconfident claims in the supplied context; they cannot independently fact-check information that is absent from that context.
 - **It does not explain or fix.** Wording in flags is authored by this extension from the judgment text; the explanation and the fix come from the main LLM (or you).
-- **Cost/latency.** One `systemOne` call is made per file or supplied chunk. A directory or group review therefore costs one request per discovered file, while divide-and-conquer review costs one request per chunk; `maxFiles` defaults to 200 for directory scans. Measure your real budget and choose chunk sizes that reduce context without creating excessive calls.
+- **Cost/latency.** One `systemOne` call is made per file or supplied chunk. A directory or group review therefore costs one request per discovered file, while divide-and-conquer review costs one request per chunk; `maxFiles` defaults to 50 and accepts an explicit maximum of 200 for directory scans. Measure your real budget and choose chunk sizes that reduce context without creating excessive calls.
 
 ## Security
 
-- The key is the gate and is read only from the environment by the SDK; it is never written into the request or any log.
+- `jev.disable` is the registration gate. A missing key leaves the tool and command registered so status and actionable errors remain available; reviews fail safely until `TYPESAFE_API_KEY` is set.
+- The SDK reads the key from the environment for TypeSafe transport authentication; extension state, review content, status, and logs never contain key characters.
 - Status displays reveal only `set` or `unset`; they never expose key characters or length.
 - File and directory targets are confined to the current project root after resolving symlinks.
 - Likely credential files such as `.env`, `.npmrc`, private keys, and credential JSON files are rejected before code is sent to TypeSafe.

@@ -6,6 +6,9 @@ import { test } from "node:test";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import { DEFAULTS } from "../extension/config.ts";
 import {
+  DEFAULT_MAX_FILES,
+  MAX_CODE_CHARS,
+  MAX_FILES,
   normalizeExtensions,
   resolveReviewType,
   resolveSectionTarget,
@@ -13,6 +16,12 @@ import {
   runSectionReviews,
 } from "../extension/jev-tool.ts";
 import { buildReviewQuestions } from "../extension/questions.ts";
+
+test("request limits use bounded defaults within Jev context", () => {
+  assert.equal(DEFAULT_MAX_FILES, 50);
+  assert.equal(MAX_FILES, 200);
+  assert.equal(MAX_CODE_CHARS, 80_000);
+});
 
 test("review types are validated before execution", () => {
   assert.equal(resolveReviewType("prose"), "prose");

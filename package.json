@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-anti-slop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "TypeSafe Jev code-review and AI-slop detection for pi agent review loops.",
   "license": "MIT",
