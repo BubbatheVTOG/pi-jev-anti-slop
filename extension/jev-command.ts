@@ -110,7 +110,7 @@ function notifyStatus(ctx: ExtensionCommandContext, cfg: JevConfig): void {
     `  disabled             ${cfg.disable}`,
     `  TYPESAFE_API_KEY     ${keyMasked()}`,
     `  reviewTypes          ${REVIEW_TYPES.join(", ")}`,
-    `  scoreRange           0–10`,
+    `  scoreRange           1–10`,
     `  compositeBlockBelow  ${cfg.compositeBlockBelow}`,
     `  compositeReviewBelow ${cfg.compositeReviewBelow}`,
     `  bugBlockThreshold    ${cfg.bugBlockThreshold}`,

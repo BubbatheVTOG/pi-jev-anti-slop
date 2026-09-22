@@ -8,11 +8,11 @@ import {
   SCORE_RUBRIC_SIZE,
 } from "../extension/types.ts";
 
-test("quality reviews use every 0-10 score dimension and no issue checks", () => {
+test("quality reviews use every 1-10 score dimension and no issue checks", () => {
   const built = buildReviewQuestions("quality");
   assert.deepEqual(built.dimensionNames, [...DIMENSIONS]);
   assert.deepEqual(built.bugNames, []);
-  assert.equal(SCORE_RUBRIC_SIZE, 11);
+  assert.equal(SCORE_RUBRIC_SIZE, 10);
   assert.equal(SCORE_MAX, 10);
 });
 

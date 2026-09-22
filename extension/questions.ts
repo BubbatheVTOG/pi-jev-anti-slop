@@ -30,13 +30,11 @@ import {
  */
 
 /**
- * An ordered rubric: at least two levels, indexed from 0 (worst → best). The
- * SDK's ScoreCriteria is a min-2 tuple, so a plain `string[]` won't satisfy it;
- * type the levels as a min-2 tuple of strings instead. (score() throws at
- * runtime if criteria is not a list of >= 2 entries.)
+ * An ordered ten-level rubric (1 = worst, 10 = best). TypeSafe accepts at most
+ * ten score levels. The SDK's ScoreCriteria is a min-2 tuple, so a plain
+ * `string[]` will not satisfy it.
  */
 type Rubric = readonly [
-  string,
   string,
   string,
   string,
@@ -51,21 +49,20 @@ type Rubric = readonly [
 
 function qualityRubric(focus: string, worst: string, best: string): Rubric {
   return [
-    `0 — ${worst}`,
-    `1 — Very poor ${focus}; pervasive problems make the code unsafe or exceptionally difficult to work with`,
-    `2 — Poor ${focus}; major problems dominate and require substantial correction`,
-    `3 — Weak ${focus}; several serious problems outweigh the limited strengths`,
-    `4 — Below-average ${focus}; important weaknesses remain despite some acceptable elements`,
-    `5 — Mixed ${focus}; meets a basic baseline but has material room for improvement`,
-    `6 — Sound ${focus}; strengths outweigh weaknesses and the remaining issues are manageable`,
-    `7 — Good ${focus}; consistently solid with only a few meaningful shortcomings`,
-    `8 — Very good ${focus}; strong throughout with only minor, localized weaknesses`,
+    `1 — ${worst}`,
+    `2 — Very poor ${focus}; pervasive problems make the code unsafe or exceptionally difficult to work with`,
+    `3 — Poor ${focus}; major problems dominate and require substantial correction`,
+    `4 — Weak ${focus}; several serious problems outweigh the limited strengths`,
+    `5 — Below-average ${focus}; important weaknesses remain despite some acceptable elements`,
+    `6 — Mixed ${focus}; meets a basic baseline but has material room for improvement`,
+    `7 — Sound ${focus}; strengths outweigh weaknesses and the remaining issues are manageable`,
+    `8 — Good ${focus}; consistently solid with only a few meaningful shortcomings`,
     `9 — Excellent ${focus}; near-exemplary with negligible room for practical improvement`,
     `10 — ${best}`,
   ];
 }
 
-/** 11-level rubric (0 = worst, 10 = best). */
+/** Ten-level rubric (1 = worst, 10 = best). */
 const LEVELS: Record<Dimension, Rubric> = {
   readability: qualityRubric(
     "readability across naming, structure, and control flow",

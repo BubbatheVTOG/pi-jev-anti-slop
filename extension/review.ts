@@ -1,7 +1,12 @@
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { EntryType } from "@typesafe-ai/sdk";
 import { buildReviewQuestions } from "./questions.ts";
-import { SCORE_MAX, type RawJudgments, type ReviewType } from "./types.ts";
+import {
+ SCORE_MAX,
+ SCORE_MIN,
+ type RawJudgments,
+ type ReviewType,
+} from "./types.ts";
 
 export class ReviewError extends Error {
  readonly kind: "request" | "response";
@@ -55,11 +60,11 @@ function normalizeScoreAnswer(
 ): RawJudgments["scores"][string] {
  if (
   !Number.isFinite(answer.score) ||
-  answer.score < 0 ||
+  answer.score < SCORE_MIN ||
   answer.score > SCORE_MAX
  ) {
   throw new Error(
-   `invalid score answer for "${name}": expected a value from 0 to ${SCORE_MAX}`,
+   `invalid score answer for "${name}": expected a value from ${SCORE_MIN} to ${SCORE_MAX}`,
   );
  }
  const probabilities = Object.fromEntries(

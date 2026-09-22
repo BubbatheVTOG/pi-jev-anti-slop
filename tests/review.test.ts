@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryType, TypeSafeClient } from "@typesafe-ai/sdk";
 import { ReviewError, runReview } from "../extension/review.ts";
-import { DIMENSIONS, SCORE_MAX } from "../extension/types.ts";
+import { DIMENSIONS, SCORE_MAX, SCORE_MIN } from "../extension/types.ts";
 
 function qualityClient(score: number): TypeSafeClient {
   const answers = Object.fromEntries(
@@ -23,7 +23,7 @@ function qualityClient(score: number): TypeSafeClient {
 
 const state = { code: "export const value = 1;" } as EntryType;
 
-test("runReview accepts the top of the 0-10 score range", async () => {
+test("runReview accepts the top of the 1-10 score range", async () => {
   const raw = await runReview(qualityClient(SCORE_MAX), state, "quality");
   assert.equal(raw.scores.readability?.score, 10);
   assert.deepEqual(raw.nouls, {});
@@ -35,6 +35,16 @@ test("runReview rejects scores above 10", async () => {
     (error: unknown) =>
       error instanceof ReviewError &&
       error.kind === "response" &&
-      /0 to 10/.test(error.message),
+      /1 to 10/.test(error.message),
+  );
+});
+
+test("runReview rejects scores below 1", async () => {
+  await assert.rejects(
+    runReview(qualityClient(SCORE_MIN - 0.01), state, "quality"),
+    (error: unknown) =>
+      error instanceof ReviewError &&
+      error.kind === "response" &&
+      /1 to 10/.test(error.message),
   );
 });

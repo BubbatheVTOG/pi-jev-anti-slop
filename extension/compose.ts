@@ -2,6 +2,7 @@ import {
   CHECK_DEFINITIONS,
   DIMENSIONS,
   SCORE_MAX,
+  SCORE_MIN,
   type BugSignal,
   type Dimension,
   type DimensionAssessment,
@@ -52,7 +53,9 @@ export function composeReport(
   for (const dim of DIMENSIONS) {
     const a = raw.scores[dim];
     if (!a) continue;
-    const normalized = clamp01(a.score / SCORE_MAX);
+    const normalized = clamp01(
+      (a.score - SCORE_MIN) / (SCORE_MAX - SCORE_MIN),
+    );
     const confidence = a.confidence;
     const flagged = normalized < cfg.dimensionFlagBelow;
     const uncertain = flagged && confidence < cfg.confidenceFloor;
@@ -234,7 +237,7 @@ export function renderForLLM(r: ReviewReport): string {
     lines.push("Dimensions: not requested for this review type.");
   } else {
     lines.push(
-      `Dimensions (0=worst → 1=best, normalized from Jev's 0–${SCORE_MAX} rubric; conf = Jev confidence):`,
+      `Dimensions (0=worst → 1=best, normalized from Jev's ${SCORE_MIN}–${SCORE_MAX} rubric; conf = Jev confidence):`,
     );
     for (const dim of scoredDimensions) {
       const d = r.dimensions[dim];

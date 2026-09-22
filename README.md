@@ -8,7 +8,7 @@ It scores a file, diff, or named code chunk for **bugs**, **AI-code slop**, **se
 
 ## What Jev checks
 
-Each full or `quality` review scores these dimensions from 0 (worst) to 10 (best), then normalizes them to 0–1 for policy and composite scoring:
+Each full or `quality` review scores these dimensions from 1 (worst) to 10 (best), then normalizes them to 0–1 for policy and composite scoring. TypeSafe accepts at most ten score levels, so this inclusive 1–10 rubric uses exactly ten levels:
 
 - `readability` — naming, control flow, and how easily a new reader can reason about the code;
 - `maintainability` — cohesion, coupling, duplication, and change isolation;
@@ -114,7 +114,7 @@ The agent reads back a structured report. Set `reviewType` to the narrowest rele
 
 ```text
 /jev review all src/foo.ts                      # every score and targeted check
-/jev review quality src/foo.ts                  # 0–10 quality scores only
+/jev review quality src/foo.ts                  # 1–10 quality scores only
 /jev review security src                        # security checks across a directory
 /jev review memory src/cache.ts                 # memory checks for one file
 /jev review performance src                     # speed/scalability checks across a directory
@@ -134,7 +134,7 @@ The original `/jev review <path>` form remains a backward-compatible alias for `
 ## Jev review — src/foo.ts
 verdict: REVIEW   composite health 0.41 / 1.00   escalate=true
 
-Dimensions (0=worst → 1=best, normalized from Jev's 0–10 rubric; conf = Jev confidence):
+Dimensions (0=worst → 1=best, normalized from Jev's 1–10 rubric; conf = Jev confidence):
   readability              0.62  raw 6.20/10  conf 0.71
   maintainability          0.38  raw 3.80/10  conf 0.66   <-- FLAGGED
   extensibility            0.55  raw 5.50/10  conf 0.52
@@ -177,16 +177,16 @@ tests/
   compose.test.ts     # pure composition and targeted-review behavior
   jev-command.test.ts # review-type completion and command parsing
   jev-tool.test.ts    # filename-plus-chunk selection and safety
-  questions.test.ts   # 0–10 and targeted question selection
+  questions.test.ts   # 1–10 and targeted question selection
   readme.test.ts      # keeps every dimension/check and strategy documented
-  review.test.ts      # response validation for the 0–10 range
+  review.test.ts      # response validation for the 1–10 range
   security.test.ts    # key-redaction, confinement, and config validation
 ```
 
 **Design choices (each grounded in the live docs):**
 
 - **One request, many questions.** All quality-dimension `score`s and all bug-class `nouls` share a single `state` (the code) and run in **one** call — the [`parallel questions` cookbook](https://docs.typesafe.ai/cookbooks/parallel_questions.md) (cheaper + faster, identical answers).
-- **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `score/(levels-1)` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
+- **Composite scoring, not a classifier.** Each quality dimension is an independent [`Score`](https://docs.typesafe.ai/primitives/score.md); code normalizes `(score-1)/9` and weights it — the [`composite scoring` pattern](https://docs.typesafe.ai/patterns/composite-scoring.md). Weights/thresholds live in code, so **changing a weight never re-calls the API** (raw judgments are kept and reusable). Composite health is reported as context, but composite-only scores do not escalate a file without a concrete bug, flagged dimension, or uncertainty signal.
 - **De-slop detection as a categorized `Noul` battery.** Each high-signal correctness, completeness, contract, error, security, memory, performance, prose, or design check is one narrow [`Noul`](https://docs.typesafe.ai/primitives/noul.md), thresholded in code — the [`guardrails for LLMs` cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails.md) (pass / review / block routing). Reports retain the existing `bugSignals` field and add a `category` to each signal, preserving existing consumers.
 - **Targeted review types.** Both `jev_review(reviewType, ...)` and `/jev review <review-type> <file-or-directory>` send only the score or issue questions relevant to that type. This reduces cost and noise when searching specifically for security, memory, performance, prose, or another category; `all` retains the complete review. Tool batches persist structured per-file reports, progress, truncation state, and isolated errors in result details.
 - **Documentation and prose de-slopping.** The `prose` type checks style, factual support, grammar, usage, mechanics, cadence, tone, audience fit, stale instructions, and common LLM-writing artifacts. It can review documentation files or natural-language comments/docstrings in source without treating executable code as prose.
@@ -258,3 +258,8 @@ The unit tests exercise the verdict/escalation matrix with a mocked raw-judgment
 - High-confidence credential shapes—including private-key blocks, common provider tokens, and credential assignments—are replaced with `[REDACTED]` before file or inline code is sent.
 - Redaction is defense in depth, not a complete secret scanner; do not deliberately submit credentials.
 - Keep the key server-side; this extension never persists it.
+
+## Related packages
+
+- [`pi-jev-tool-guard`](https://pi.dev/packages/pi-jev-tool-guard) — context-aware Jev safeguards for Pi tool calls ([npm](https://www.npmjs.com/package/pi-jev-tool-guard), [GitHub](https://github.com/BubbatheVTOG/pi-jev-tool-guard)).
+- [`pi-jev-redact`](https://pi.dev/packages/pi-jev-redact) — last-mile provider-payload secret and PII redaction ([npm](https://www.npmjs.com/package/pi-jev-redact), [GitHub](https://github.com/BubbatheVTOG/pi-jev-redact)).

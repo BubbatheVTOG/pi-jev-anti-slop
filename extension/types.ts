@@ -30,12 +30,14 @@ export const DIMENSIONS = [
 export type Dimension = (typeof DIMENSIONS)[number];
 
 /**
- * Ordered rubric size for every quality dimension: 0 = worst, 10 = best.
- * `compose.ts` normalizes `score / (SIZE - 1)` into 0..1 (composite-scoring
- * pattern). If the rubric grows, this stays the single knob both sides share.
+ * Ordered rubric for every quality dimension: 1 = worst, 10 = best. TypeSafe
+ * accepts at most ten score levels, so normalization maps the inclusive 1..10
+ * range onto 0..1. Keep these constants as the single contract shared by
+ * questions, validation, composition, status, tests, and documentation.
  */
-export const SCORE_RUBRIC_SIZE = 11;
-export const SCORE_MAX = SCORE_RUBRIC_SIZE - 1;
+export const SCORE_MIN = 1;
+export const SCORE_RUBRIC_SIZE = 10;
+export const SCORE_MAX = SCORE_MIN + SCORE_RUBRIC_SIZE - 1;
 
 /**
  * High-signal, common LLM-code bug classes — ONE narrow `noul` each (the
@@ -324,9 +326,9 @@ export type FlagSeverity = "info" | "warning" | "error";
 
 export interface DimensionAssessment {
  dimension: Dimension;
- raw: number; // expected score on the 0..SCORE_MAX rubric
+ raw: number; // expected score on the SCORE_MIN..SCORE_MAX rubric
  max: number; // SCORE_MAX
- normalized: number; // raw / max → 0..1 (1 = best)
+ normalized: number; // (raw - min) / (max - min) → 0..1 (1 = best)
  confidence: number;
  probabilities: Record<string, number>;
  /** normalized below the configured floor. */
